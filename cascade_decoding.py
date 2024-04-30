@@ -128,7 +128,7 @@ def cascade_EC(X,Y,QBER, max_iter):
         else:
             #perm2 = np.asarray([9,2,0,7,15,11,14,10,1,12,4,6,17,13,18,19,5,8,16,3])
             #perm3 = np.asarray([11,16,18,1,19,10,4,17,0,7,6,3,15,8,12,9,5,13,2,14])
-            perm = shuffle_key(perm) ##returns shuffled indexing of Y
+            perm = shuffle_key(perm.copy()) ##returns shuffled indexing of Y
             #if iter == 1:
              #   perm = perm2
             #if iter == 2:
@@ -337,7 +337,7 @@ def infer_remaining_bits(Z,Eves_traces,X):
 ##### ToDo: Cascade effect #####
 
 QBER = 0.1
-N = 20
+N = 500
 X,Y = gen_sifted_keys(N,QBER)
 #X = np.asarray([0,0,0,1,1,1,1,0,0,0,1,0,0,1,1,1,1,0,0,0])
 #Y = np.asarray([0,0,0,1,1,0,1,1,0,0,1,0,0,1,1,1,1,0,0,0])

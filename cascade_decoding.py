@@ -126,8 +126,13 @@ def cascade_EC(X,Y,QBER, max_iter):
         if iter == 0:
             perm = orig_perm
         else:
+            #perm2 = np.asarray([9,2,0,7,15,11,14,10,1,12,4,6,17,13,18,19,5,8,16,3])
+            #perm3 = np.asarray([11,16,18,1,19,10,4,17,0,7,6,3,15,8,12,9,5,13,2,14])
             perm = shuffle_key(perm) ##returns shuffled indexing of Y
-
+            #if iter == 1:
+             #   perm = perm2
+            #if iter == 2:
+              #  perm = perm3
         print("\n#### Iteration {0} ####\n{1} : Permutation of Bob's key".format(iter+1, perm))
 
         blocks, blocksize, bit_positions = split_blocks(N,iter,blocksize,QBER, perm)
@@ -166,13 +171,18 @@ def query_correct_parity(X,bit_positions,Eves_traces,Z):
   #  print(check_message)
     parity, hw = parity_check(check_message)
 
+    print("\nparity check on bits at: {0}".format(bit_positions))
+    print(check_message)
+    print("   {0}".format(hw))
+    print("\n")
+
     #################
     ## Side channel attack based on hw fits here
 
     ##let an entry in Eves traces correspond to both the hamming weights and corresponding bit positions and the corresponding parity bit
     if bit_positions.shape[0] > 1:
         trace_entry = [hw, bit_positions, parity] ##maybe let this run for ==1 condition too
-        Eves_traces.append(trace_entry) 
+        Eves_traces.append(trace_entry.copy()) 
 
     if bit_positions.shape[0] == 1:
         for trace_info in Eves_traces:
@@ -199,7 +209,8 @@ def reveal_bits(Z, x_revealed, x_revealed_pos, trace_info):
         if bit_positions[i] == x_revealed_pos or start == True:
 
             ##condition satisifed on first inference
-            if start == False:
+          #  if start == False:
+            if i == 0:
                 if x_revealed == 0 and trace[i] == 0:
                     x_revealed_next = 0
                 if x_revealed == 0 and trace[i] == 1:
@@ -245,12 +256,12 @@ def reveal_bits(Z, x_revealed, x_revealed_pos, trace_info):
     return Z
 
 
-def infer_remaining_bits(Z,trace_info):
+def infer_remaining_bits(Z,Eves_traces,X):
 
     ##search for remaining unknown Z values
     for i in range(Z.shape[0]):
         if Z[i] == -1:
-            for trace in trace_info:
+            for trace in Eves_traces:
                 bit_positions = trace[1]
                 if np.any(bit_positions == i) and bit_positions[0] != i:
                     parity_trace = trace[0]
@@ -269,18 +280,49 @@ def infer_remaining_bits(Z,trace_info):
                             x_infer = int(x_known) ^ int(parity_trace[0])
                             Z[bit_positions[j]] = x_infer
 
+                    ###must include condition that allows inference only if previous bit in parity check is known
 
-                    if len(parity_trace) > 1:                        
-                        if parity_trace[j-2] == 0 and parity_trace[j-1] == 0:
-                            infered_z = 0
-                        if parity_trace[j-2] == 0 and parity_trace[j-1] == 1:
-                            infered_z = 1
-                        if parity_trace[j-2] == 1 and parity_trace[j-1] == 0:
-                            infered_z = 1
-                        if parity_trace[j-2] == 1 and parity_trace[j-1] == 1:
-                            infered_z = 0
+                    if len(parity_trace) > 1 and Z[int(bit_positions[j-1])] != -1:                        
+                      #  if parity_trace[j-2] == 0 and parity_trace[j-1] == 0:
+                      #      infered_z = 0
+                      #  if parity_trace[j-2] == 0 and parity_trace[j-1] == 1:
+                      #      infered_z = 1
+                      #  if parity_trace[j-2] == 1 and parity_trace[j-1] == 0:
+                      #      infered_z = 1
+                      #  if parity_trace[j-2] == 1 and parity_trace[j-1] == 1:
+                      #      infered_z = 0
                         
-                        Z[i] = infered_z
+                     #   Z[i] = infered_z
+                        if j == 1:
+                            Z_prev = Z[int(bit_positions[j-1])]
+                            ##condition satisifed on first inference
+                            
+                            if Z_prev == 0 and parity_trace[j-1] == 0:
+                                x_revealed_next = 0
+                            if Z_prev == 0 and parity_trace[j-1] == 1:
+                                x_revealed_next = 1
+                            if Z_prev == 1 and parity_trace[j-1] == 0:
+                                x_revealed_next = 1
+                            if Z_prev == 1 and parity_trace[j-1] == 1:
+                                x_revealed_next = 0
+
+
+                       
+                        
+                        else:
+                            if parity_trace[j-2] == 0 and parity_trace[j-1] == 0:
+                                x_revealed_next = 0
+                            if parity_trace[j-2] == 0 and parity_trace[j-1] == 1:
+                                x_revealed_next = 1
+                            if parity_trace[j-2] == 1 and parity_trace[j-1] == 0:
+                                x_revealed_next = 1
+                            if parity_trace[j-2] == 1 and parity_trace[j-1] == 1:
+                                x_revealed_next = 0
+
+                        Z[i] = x_revealed_next
+                        if Z[i] != X[i]:
+                            h = 9 ##debugg
+
                         break
     return Z
 
@@ -292,18 +334,14 @@ def infer_remaining_bits(Z,trace_info):
 
 
 
-
-
-
-
 ##### ToDo: Cascade effect #####
 
 QBER = 0.1
-N = 128
+N = 20
 X,Y = gen_sifted_keys(N,QBER)
-#X = np.asarray([1,1,0,0,0,1,0,0,0,0,1,0,1,0,0,1,1,1,0,1])
-#Y = np.asarray([1,1,0,0,0,1,0,0,0,0,1,0,1,0,0,0,1,1,1,1])
-perm2 = []
+#X = np.asarray([0,0,0,1,1,1,1,0,0,0,1,0,0,1,1,1,1,0,0,0])
+#Y = np.asarray([0,0,0,1,1,0,1,1,0,0,1,0,0,1,1,1,1,0,0,0])
+
 
 #X is Alices key
 #Y is Bobs key
@@ -311,7 +349,7 @@ print("{0} : Alice's original key".format(X))
 print("{0} : Bob's original key".format(Y))
 print("########### Beginnig Error Correction ###############\n\n")
 
-Y_ec, Z, trace_info = cascade_EC(X,Y,QBER,3)
+Y_ec, Z, Eves_traces = cascade_EC(X,Y,QBER,3)
 
 print("\n\n########### Finished Error Correction ###############\n")
 
@@ -335,7 +373,9 @@ for i in range(Z.shape[0]):
 
 print("Total bits infered: {0}, {1}%% of which are correct".format(infered_total, (100*infered_correct/infered_total)))
 
-Z = infer_remaining_bits(Z,trace_info)
+Z = infer_remaining_bits(Z,Eves_traces,X)
+
+
 
 infered_total = 0
 infered_correct = 0
@@ -347,3 +387,18 @@ for i in range(Z.shape[0]):
 
 print("\n{0}".format(Z))
 print("Total bits infered after cleanup algorithm: {0}, {1}%% of which are correct".format(infered_total, (100*infered_correct/infered_total)))
+
+
+Z = infer_remaining_bits(Z,Eves_traces,X)
+
+infered_total = 0
+infered_correct = 0
+for i in range(Z.shape[0]):
+    if Z[i] != -1:
+        infered_total = infered_total + 1
+    if Z[i] == X[i]:
+        infered_correct = infered_correct + 1
+
+print("\n{0}".format(Z))
+print("Total bits infered after cleanup algorithm, 2nd iteration: {0}, {1}%% of which are correct".format(infered_total, (100*infered_correct/infered_total)))
+

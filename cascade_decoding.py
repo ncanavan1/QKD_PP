@@ -1,6 +1,8 @@
 import numpy as np
 import random
-from colorama import Fore
+import csv
+import os
+#from colorama import Fore
 
 def gen_sifted_keys(N,QBER):
     xA = np.zeros([N])
@@ -36,7 +38,7 @@ def shuffle_key(perm):
   #  return temp, perm
     return perm
 
-def split_blocks(N, iter , blocksize_prev, QBER, perm):
+def split_blocks(N, iter , blocksize_prev, QBER, perm, Y):
     
     ##set current blocksize (using floor func)
     blocksize = int(2*blocksize_prev)
@@ -135,7 +137,7 @@ def cascade_EC(X,Y,QBER, max_iter):
               #  perm = perm3
         print("\n#### Iteration {0} ####\n{1} : Permutation of Bob's key".format(iter+1, perm))
 
-        blocks, blocksize, bit_positions = split_blocks(N,iter,blocksize,QBER, perm)
+        blocks, blocksize, bit_positions = split_blocks(N,iter,blocksize,QBER, perm,Y)
         for i in range(len(blocks)):
             print("Block {0}: {1}  ---> Map to bits of Y in position: {2}".format(i, blocks[i], bit_positions[i]))
 
@@ -335,70 +337,117 @@ def infer_remaining_bits(Z,Eves_traces,X):
 
 
 ##### ToDo: Cascade effect #####
-
-QBER = 0.1
-N = 500
-X,Y = gen_sifted_keys(N,QBER)
-#X = np.asarray([0,0,0,1,1,1,1,0,0,0,1,0,0,1,1,1,1,0,0,0])
-#Y = np.asarray([0,0,0,1,1,0,1,1,0,0,1,0,0,1,1,1,1,0,0,0])
-
-
-#X is Alices key
-#Y is Bobs key
-print("{0} : Alice's original key".format(X))
-print("{0} : Bob's original key".format(Y))
-print("########### Beginnig Error Correction ###############\n\n")
-
-Y_ec, Z, Eves_traces = cascade_EC(X,Y,QBER,3)
-
-print("\n\n########### Finished Error Correction ###############\n")
-
-print("{0} : Bobs final key".format(Y_ec))
-if (X == Y_ec).all():
-    print("Successfully Corrected Errors!")
-else:
-    print("Unsuccessful Error Correction")
+def verbose_attack():
+    QBER = 0.1
+    N = 500
+    X,Y = gen_sifted_keys(N,QBER)
+    #X = np.asarray([0,0,0,1,1,1,1,0,0,0,1,0,0,1,1,1,1,0,0,0])
+    #Y = np.asarray([0,0,0,1,1,0,1,1,0,0,1,0,0,1,1,1,1,0,0,0])
 
 
-print("\n\n########### Eves Infered Key ###############\n")
-print("{0}".format(Z))
+    #X is Alices key
+    #Y is Bobs key
+    print("{0} : Alice's original key".format(X))
+    print("{0} : Bob's original key".format(Y))
+    print("########### Beginnig Error Correction ###############\n\n")
 
-infered_total = 0
-infered_correct = 0
-for i in range(Z.shape[0]):
-    if Z[i] != -1:
-        infered_total = infered_total + 1
-    if Z[i] == X[i]:
-        infered_correct = infered_correct + 1
+    Y_ec, Z, Eves_traces = cascade_EC(X,Y,QBER,3)
 
-print("Total bits infered: {0}, {1}%% of which are correct".format(infered_total, (100*infered_correct/infered_total)))
+    print("\n\n########### Finished Error Correction ###############\n")
 
-Z = infer_remaining_bits(Z,Eves_traces,X)
-
-
-
-infered_total = 0
-infered_correct = 0
-for i in range(Z.shape[0]):
-    if Z[i] != -1:
-        infered_total = infered_total + 1
-    if Z[i] == X[i]:
-        infered_correct = infered_correct + 1
-
-print("\n{0}".format(Z))
-print("Total bits infered after cleanup algorithm: {0}, {1}%% of which are correct".format(infered_total, (100*infered_correct/infered_total)))
+    print("{0} : Bobs final key".format(Y_ec))
+    if (X == Y_ec).all():
+        print("Successfully Corrected Errors!")
+    else:
+        print("Unsuccessful Error Correction")
 
 
-Z = infer_remaining_bits(Z,Eves_traces,X)
+    print("\n\n########### Eves Infered Key ###############\n")
+    print("{0}".format(Z))
 
-infered_total = 0
-infered_correct = 0
-for i in range(Z.shape[0]):
-    if Z[i] != -1:
-        infered_total = infered_total + 1
-    if Z[i] == X[i]:
-        infered_correct = infered_correct + 1
+    infered_total = 0
+    infered_correct = 0
+    for i in range(Z.shape[0]):
+        if Z[i] != -1:
+            infered_total = infered_total + 1
+        if Z[i] == X[i]:
+            infered_correct = infered_correct + 1
 
-print("\n{0}".format(Z))
-print("Total bits infered after cleanup algorithm, 2nd iteration: {0}, {1}%% of which are correct".format(infered_total, (100*infered_correct/infered_total)))
+    print("Total bits infered: {0}, {1}%% of which are correct".format(infered_total, (100*infered_correct/infered_total)))
 
+    Z = infer_remaining_bits(Z,Eves_traces,X)
+
+
+
+    infered_total = 0
+    infered_correct = 0
+    for i in range(Z.shape[0]):
+        if Z[i] != -1:
+            infered_total = infered_total + 1
+        if Z[i] == X[i]:
+            infered_correct = infered_correct + 1
+
+    print("\n{0}".format(Z))
+    print("Total bits infered after cleanup algorithm: {0}, {1}%% of which are correct".format(infered_total, (100*infered_correct/infered_total)))
+
+
+    Z = infer_remaining_bits(Z,Eves_traces,X)
+
+    infered_total = 0
+    infered_correct = 0
+    for i in range(Z.shape[0]):
+        if Z[i] != -1:
+            infered_total = infered_total + 1
+        if Z[i] == X[i]:
+            infered_correct = infered_correct + 1
+
+    print("\n{0}".format(Z))
+    print("Total bits infered after cleanup algorithm, 2nd iteration: {0}, {1}%% of which are correct".format(infered_total, (100*infered_correct/infered_total)))
+
+
+
+def param_tests(QBER, N, outfile, rep):
+    X,Y = gen_sifted_keys(N,QBER)
+    Y_ec, Z, Eves_traces = cascade_EC(X,Y,QBER,3)
+
+    EC_success = False
+    if (X == Y_ec).all():
+        EC_success = True
+
+        for r in range(rep):
+            Z = infer_remaining_bits(Z,Eves_traces,X)
+
+        infered_total = 0
+        infered_correct = 0
+        for i in range(Z.shape[0]):
+            if Z[i] != -1:
+                infered_total = infered_total + 1
+            if Z[i] == X[i]:
+                infered_correct = infered_correct + 1
+
+        
+        info = [N,QBER,rep,infered_total,infered_correct]
+        with open(outfile, 'a') as f:
+            write = csv.writer(f)
+            write.writerow(info)
+            f.close()
+
+
+
+outfile ="results/attack_success.csv"
+try:
+    os.remove(outfile)
+except:
+    dummy = 0
+#param_tests(0.1,100,outfile)
+
+QBERrange = np.arange(0.01,0.12,0.01).round(2)
+
+
+for QBER in QBERrange:
+    print("QBER: " + str(QBER))
+    for N in range(50,1000,20):
+        #for i in range(5): ##repeat
+        for rep in range(0,3):
+            for i in range(20):##repeat to eliminate error calculations
+                param_tests(QBER,N,outfile,rep)

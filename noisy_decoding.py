@@ -223,6 +223,7 @@ def gen_secret(N):
         xA[i] = np.random.choice([0,1])
     return xA
  
+"""
 def gen_Trace(secret,N,err):
     trace = np.zeros([N])
     trace[0] = int(secret[0]) ^ 0
@@ -235,34 +236,59 @@ def gen_Trace(secret,N,err):
         if i in err_pos:
             trace[i] = (trace[i] + 1) % 2
     return trace
- 
-def recover_secret_majoirty(traces,N,sigma):
-    eve_key_all = np.empty(N,dtype=object)
-    for i in range(0,N):
-        eve_key_all[i] = []
+ """
 
-    for trace in traces:
-        parity = trace[0]
-        pos = trace[1]
-        eve_key_all[pos[0]].append(int(parity[0]) ^ 0)
-        for i in range(1,pos.shape[0]):
-            eve_key_all[pos[i]].append(int(parity[i]) ^ int(parity[i-1]))
- 
+def recover_secret_majoirty(traces,N,sigma):
+    M = len(traces)
+    H_E = np.zeros([M,N])
+    P_A = np.zeros(M)
+    Included_matrix = np.zeros([M,N])
+    Conf_vector = np.zeros(N)
     final_key = np.zeros(N)
-    for i in range(N):
-        ones = 0
-        zeors = 0
-        for vote in eve_key_all[i]:
-            if vote == 0:
-                zeors = zeors + 1
-            else:
-                ones = ones + 1
-        if ones > zeors:
-            final_key[i] = 1
-        else:
-            final_key[i] = 0
+    alpha = 10
+    beta = 2.5
+
+
+    check = 0
+    for trace in traces:
+        inter_parity = trace[0]
+        pos = trace[1]
+        out_parity = trace[2]
+        P_A[check] = out_parity
+        if pos.size == 1:
+            Conf_vector[pos[0]] = 1
+            final_key[pos[0]] = out_parity
+        for i in reversed(range(1,pos.size)):
+            H_E[check,pos[i]] = inter_parity[i] ^ inter_parity[i-1]
+            Included_matrix[check,pos[i]] = 1
+        H_E[check,pos[0]] = inter_parity[0]
+        check = check + 1
+
  
-    return final_key, eve_key_all
+    for i in range(N):
+        if Conf_vector[i] != 1:
+            ones = 0
+            zeros = 0
+            for check in range(M):
+                if Included_matrix[check,i] == 1:
+                    if H_E[check,i] == 0:
+                        zeros = zeros + 1
+                    else:
+                        ones = ones + 1
+            if ones > zeros:
+                final_key[i] = 1
+            else:
+                final_key[i] = 0
+            
+            R_Total = ones+zeros
+            R_ratio = np.abs((ones-zeros)/R_Total)
+
+            ###THIS FUNCTION COULD DO WITH LOTS OF WORK/EXP
+            conf_rating = (min(R_Total,alpha)/alpha) * np.tanh(beta*R_ratio)
+            Conf_vector[i] = conf_rating
+
+ 
+    return final_key, H_E, Included_matrix, Conf_vector, P_A
 
 
 def Eve_parity_checks(traces,eve_key):
@@ -283,50 +309,88 @@ def Eve_parity_checks(traces,eve_key):
 
     return failed, failed_pos, len(failed)
 
-        
 
+def calc_PE(H_E,N,M):
+   # ones_vec = np.ones([N,1])
+    #PE = np.matmul(H_E,ones_vec)%2
+    PE=np.zeros([1,M])
+    for m in range(M):
+        p, hw = parity_check(H_E[m,:])
+        PE[0,m] = p
+    return np.reshape(PE,M)
 
-def confidence_flip(eve_key_all, eve_key_maj, traces, N, thresh):
-    conf_rating = np.ones(N) * 0.5
-    err_c = 0
+def calc_PE_from_key(key,traces,M):
+    PE = np.zeros([1,M])
+    i = 0
     for trace in traces:
-        if len(trace[0]) == 1:
-            
-            if eve_key_maj[int(trace[1][0])] != trace[0][0]:
-                err_c = err_c + 1
+        pos = trace[1]
+        block = []
+        for p in pos:
+            block.append(key[p])
+        parityEve, hw = parity_check(np.asarray(block))
+        PE[0,i] = parityEve
+        i = i+1
+    return np.reshape(PE,M)
 
-            eve_key_maj[int(trace[1][0])] = trace[0][0]
 
-            if trace[0][0] == 0:
-                conf_rating[int(trace[1][0])] = 0
-            else:
-                conf_rating[int(trace[1][0])] = 1
 
+
+
+def gen_binary_comb(n):
+    bin_strings = []
+    def get_bin(n,bs=''):
+        if len(bs) == n:
+            bin_strings.append(bs)
+        else:
+            get_bin(n, bs + '0')
+            get_bin(n, bs + '1')
+    get_bin(n)
+    return bin_strings
+
+
+
+def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_thresh, misses,traces):
+    #P_E = calc_PE(H_E,N,M)
+    P_E = calc_PE_from_key(majority_key,traces,M)
+    diff = (P_E + P_A)%2
+    diff_len = 0
+    for d in diff:
+        if d==1:
+            diff_len = diff_len + 1
+
+    lowConf = 1
+    secondLow = 1
+
+    for c in Conf_vector:
+        if c < lowConf:
+            lowConf = c
+        if c > lowConf and c < secondLow:
+            secondLow = c
+
+    unconf_pos = []
+   # if (P_E != P_A).any(): ##P_E == P_A is true for some cases of faulty keys
+    iterations = 3
+    for i in range(N): ##Gather unconfident values
+        if Conf_vector[i] <= secondLow + 0.01: ##need better system for this
+            unconf_pos.append(i)
     
-    for i in range(N):
-        bit_avg = np.average(np.asarray(eve_key_all[i]))
-        conf_rating[i] = bit_avg
-
-    ###Insert parity sum error checks
-    ###Set threshold error to iterate through
-    failed_parity_traces, failed_pos, N_Failed_min = Eve_parity_checks(traces,eve_key_maj)
-    sorted_failed = [item for items, c in Counter(failed_pos).most_common() for item in [items] * c]
-    failed_ranked = []
-    for pos in sorted_failed:
-        if not failed_ranked.__contains__(pos):
-            failed_ranked.append(pos)
+    bs_list = gen_binary_comb(len(unconf_pos))
+    for bs in bs_list:
+        new_key_temp = majority_key.copy()
+        for i in range(len(bs)):
+            new_key_temp[unconf_pos[i]] = int(bs[i])
+        failed, failed_pos, no_failed = Eve_parity_checks(traces,new_key_temp)
+        if no_failed == 0:
+            return new_key_temp
 
 
-    ###for the top most ranked bits in failure checks, generate all possible variations
+    return -1
 
-    eve_key_new = eve_key_maj.copy()
-    for p in failed_ranked[0:5]:
-        eve_key_new[p] = int(eve_key_new[p]) ^ 1
 
-    failed_parity_traces, failed_pos, N_Failed_new = Eve_parity_checks(traces,eve_key_new)
 
-    
-    return eve_key_new
+
+
+
  
 def recover_secret_basic(traces,N,sigma):
     eve_key = np.zeros(N)
@@ -425,8 +489,27 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
         #print("Successfully Corrected Errors!")
         ###Run Attack Here
 
-        final_key,eve_key_all = recover_secret_majoirty(Eves_traces,N,0)
-        conf_key = confidence_flip(eve_key_all,final_key,Eves_traces,N,0.1)
+        majority_key, H_E, Included_matrix, Conf_vector,P_A = recover_secret_majoirty(Eves_traces,N,0)
+        misses = []
+        if (majority_key == X).all():
+            print("Majority, Successful")
+        else:
+            for bit in range(N):
+                if X[bit] != majority_key[bit]:
+                    misses.append(bit)
+            conf_key = confidence_flip(N,len(Eves_traces),majority_key,H_E,Included_matrix,Conf_vector,P_A,0.24,misses,Eves_traces) ##misses for debugging
+            
+            if conf_key.any() == -1:
+                print("Full Info, failed")
+            else:
+                misses_new = []
+                if (conf_key == X).all():
+                    print("Full Info, Success")
+                else:
+                    for bit in range(N):
+                        if X[bit] != conf_key[bit]:
+                            misses_new.append(bit)
+        
         success_count = 0
         for i in range(N):
             if X[i] == conf_key[i]:
@@ -449,13 +532,14 @@ def plot_params(N,QBER,max_iter, err_range):
         sr_tb = -1
         sr_maj = -1
         sr_conf = -1
+        """
         while sr_tb == -1:
             sr_tb = run_EC_topblock_only(N,QBER,err,max_iter)
         tb_only.append(sr_tb)
 
         while sr_maj == -1:
             sr_maj = run_EC_majority(N,QBER,err,max_iter)
-        majority.append(sr_maj)
+        majority.append(sr_maj)"""
 
         while sr_conf == -1:
             sr_conf = run_EC_confidence_flip(N,QBER,err,max_iter)
@@ -466,8 +550,8 @@ def plot_params(N,QBER,max_iter, err_range):
 
 
 
-err_range = np.arange(0,0.2001,0.01)
-N = 512
+err_range = np.arange(0.05,0.2001,0.01)
+N = 128
 max_iter = 5
 QBER = 0.01
 avg_iter = 10

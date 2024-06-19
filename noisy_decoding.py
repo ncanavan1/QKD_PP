@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpathces
 import random
 from collections import Counter
 
@@ -275,17 +276,25 @@ def recover_secret_majoirty(traces,N,sigma):
                         zeros = zeros + 1
                     else:
                         ones = ones + 1
+            tot = ones+zeros
             if ones > zeros:
                 final_key[i] = 1
-            else:
-                final_key[i] = 0
-            
-            R_Total = ones+zeros
-            R_ratio = np.abs((ones-zeros)/R_Total)
+                Conf_vector[i] = ((ones/tot)**(1-sigma) * (zeros/tot)**(sigma)) - ((zeros/tot)**(1-sigma) * (ones/tot)**(sigma))
+                Conf_vector[i] = ((1-sigma)**(ones) * sigma**(zeros))/((1-sigma)**(zeros) * sigma**(ones))
+                Conf_vector[i] = np.emath.logn(alpha,Conf_vector[i])
 
-            ###THIS FUNCTION COULD DO WITH LOTS OF WORK/EXP
-            conf_rating = (min(R_Total,alpha)/alpha) * np.tanh(beta*R_ratio)
-            Conf_vector[i] = conf_rating
+            elif zeros > ones:
+                final_key[i] = 0
+                Conf_vector[i] = ((zeros/tot)**(1-sigma) * (ones/tot)**(sigma)) - ((ones/tot)**(1-sigma) * (zeros/tot)**(sigma))
+                Conf_vector[i] = ((1-sigma)**(zeros) * sigma**(ones))/((1-sigma)**(ones) * sigma**(zeros))
+                Conf_vector[i] = np.emath.logn(alpha,Conf_vector[i])
+
+            else: #ones==zeros
+                final_key[i] = random.choice([0,1])
+                Conf_vector[i] = 0
+            
+           # if ones == 0 or zeros == 0:
+            #    Conf_vector[i] = np.log10(max(ones,zeros) + 1)
 
  
     return final_key, H_E, Included_matrix, Conf_vector, P_A
@@ -347,9 +356,26 @@ def gen_binary_comb(n):
     get_bin(n)
     return bin_strings
 
+def get_trace_res1(traces,bit):
+    res = []
+    for trace in traces:
+        parity = trace[0]
+        bits_pos = trace[1]
+        for i in range(len(bits_pos)):
+            if bit == bits_pos[i]:
+                res.append(parity[i])
+    return res
+
+def get_trace_res2(H_E,Included_matrix,bit):
+    res = []
+    Inc_vect = Included_matrix[:,bit]
+    for check in range(len(Inc_vect)):
+        if Inc_vect[check] == 1:
+            res.append(H_E[check,bit])
+    return res
 
 
-def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_thresh, misses,traces):
+def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_thresh, misses,traces,sigma):
     #P_E = calc_PE(H_E,N,M)
     P_E = calc_PE_from_key(majority_key,traces,M)
     diff = (P_E + P_A)%2
@@ -371,20 +397,44 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
    # if (P_E != P_A).any(): ##P_E == P_A is true for some cases of faulty keys
     iterations = 3
     for i in range(N): ##Gather unconfident values
-        if Conf_vector[i] <= secondLow + 0.01: ##need better system for this
+        if Conf_vector[i] <= secondLow + 0.01 or Conf_vector[i] <= start_thresh: ##need better system for this
             unconf_pos.append(i)
-    
+
+    plt.figure()
+    bars = plt.bar(np.arange(N),Conf_vector,width=1,edgecolor='black',linewidth=0.5)
+    for i in range(N):
+        if misses.__contains__(i):
+            bars[i].set_color('black')
+
+        if unconf_pos.__contains__(i):
+            bars[i].set_color('red')
+            if misses.__contains__(i):
+                bars[i].set_color('green')
+
+    plt.xlabel("Bit")
+    plt.ylabel("Confidence")
+    plt.title("Bit Confidence for N={0}, $\sigma$={1}".format(N,sigma))
+
+    blk_p = mpathces.Patch(color='black',label='Error - Confident')
+    blu_p = mpathces.Patch(color='blue', label="Correct - Confident")
+    red_p = mpathces.Patch(color='red',label = "Correct - Unconfident")
+    grn_p = mpathces.Patch(color='green',label="Error - Unconfident")
+
+    plt.legend(handles=[blk_p,grn_p,blu_p,red_p])
+        
+    plt.savefig("results/bit_conf_N_{0}_sig_{1}.png".format(N,sigma))
+
     bs_list = gen_binary_comb(len(unconf_pos))
+    valid_bs = []
     for bs in bs_list:
         new_key_temp = majority_key.copy()
         for i in range(len(bs)):
-            new_key_temp[unconf_pos[i]] = int(bs[i])
+            new_key_temp[unconf_pos[i]] = int(new_key_temp[unconf_pos[i]]) ^ int(bs[i])
         failed, failed_pos, no_failed = Eve_parity_checks(traces,new_key_temp)
         if no_failed == 0:
-            return new_key_temp
+            valid_bs.append(bs)
 
-
-    return -1
+    return valid_bs, unconf_pos
 
 
 
@@ -448,7 +498,7 @@ def run_EC_majority(N,QBER,XOR_noise,max_iter):
         print("Successfully Corrected Errors!")
         ###Run Attack Here
 
-        final_key, eve_key_all = recover_secret_majoirty(Eves_traces,N,0)
+        final_key, H_E, Included_matrix, Conf_vector,P_A = recover_secret_majoirty(Eves_traces,N,XOR_noise)
         success_count = 0
         for i in range(N):
             if X[i] == final_key[i]:
@@ -486,21 +536,36 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
     X,Y = gen_sifted_keys(N,QBER)
     Y_ec, Eves_traces = cascade_EC(X,Y,QBER,max_iter,XOR_noise,1)
     if (X == Y_ec).all():
+        print("Noise: {0}".format(XOR_noise))
+
         #print("Successfully Corrected Errors!")
         ###Run Attack Here
 
-        majority_key, H_E, Included_matrix, Conf_vector,P_A = recover_secret_majoirty(Eves_traces,N,0)
+        majority_key, H_E, Included_matrix, Conf_vector,P_A = recover_secret_majoirty(Eves_traces,N,XOR_noise)
         misses = []
+        conf_key = majority_key.copy()
         if (majority_key == X).all():
             print("Majority, Successful")
         else:
             for bit in range(N):
                 if X[bit] != majority_key[bit]:
                     misses.append(bit)
-            conf_key = confidence_flip(N,len(Eves_traces),majority_key,H_E,Included_matrix,Conf_vector,P_A,0.24,misses,Eves_traces) ##misses for debugging
-            
-            if conf_key.any() == -1:
+            valid_bs, unconf_pos = confidence_flip(N,len(Eves_traces),majority_key,H_E,Included_matrix,Conf_vector,P_A,0.25,misses,Eves_traces,XOR_noise) ##misses for debugging
+            included_misses = 0
+            for m in misses:
+                if unconf_pos.__contains__(m):
+                    included_misses = included_misses + 1
+            if included_misses == len(misses) and len(valid_bs) > 0:
+                print("Valid List, length: {0}".format(len(valid_bs)))
+                return len(valid_bs)
+            else:
+                print("Invalid List, length: {0}".format(len(valid_bs)))
+                return 0
+            """
+            if conf_key[0] == -1:
                 print("Full Info, failed")
+                return -1
+
             else:
                 misses_new = []
                 if (conf_key == X).all():
@@ -510,17 +575,15 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
                         if X[bit] != conf_key[bit]:
                             misses_new.append(bit)
         
-        success_count = 0
-        for i in range(N):
-            if X[i] == conf_key[i]:
-                success_count = success_count + 1
-        success_rate = success_count/N
-        #print("Eve Success rate: {0}".format(success_rate))
-       # print(final_key)
-        return success_rate
-    else:
-#        print("Unsuccessful Error Correction")
-        return -1
+                    success_count = 0
+                    for i in range(N):
+                        if X[i] == conf_key[i]:
+                            success_count = success_count + 1
+                    success_rate = success_count/N
+                    #print("Eve Success rate: {0}".format(success_rate))
+                # print(final_key)
+                    return success_rate"""
+
     
 
 def plot_params(N,QBER,max_iter, err_range):
@@ -541,19 +604,19 @@ def plot_params(N,QBER,max_iter, err_range):
             sr_maj = run_EC_majority(N,QBER,err,max_iter)
         majority.append(sr_maj)"""
 
-        while sr_conf == -1:
-            sr_conf = run_EC_confidence_flip(N,QBER,err,max_iter)
-        conf.append(sr_conf)
+        #while sr_conf == -1:
+        sr_conf = run_EC_confidence_flip(N,QBER,err,max_iter)
+       # conf.append(sr_conf)
 
     return tb_only, majority, conf
 
 
 
 
-err_range = np.arange(0.05,0.2001,0.01)
+err_range = np.arange(0,0.2001,0.01)
 N = 128
 max_iter = 5
-QBER = 0.01
+QBER = 0.1
 avg_iter = 10
 tb_avg = np.zeros(shape=(21,avg_iter))
 maj_avg = np.zeros(shape=(21,avg_iter))

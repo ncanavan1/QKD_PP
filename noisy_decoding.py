@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpathces
 import random
+import math
 from collections import Counter
 
 #########################################################################
@@ -102,6 +103,7 @@ def binary_bit_flip(block, bit_positions, X, Y, Eves_traces,XOR_noise,record):
             #print("---> Flip bit in left block\n")
             Y[int(bit_positions_L[0])] = (Y[int(bit_positions_L[0])] - 1) % 2 ##flip incorrect bit in Y_orig
             return Y
+
         else:
            # print("---> binary algorithm on left sub block\n")
             binary_bit_flip(block_L,bit_positions_L,X,Y,Eves_traces,XOR_noise,record)
@@ -117,11 +119,68 @@ def binary_bit_flip(block, bit_positions, X, Y, Eves_traces,XOR_noise,record):
     return Y
 
 
+def cascade_effect(X, key_index_list, key_value_list, corrected_pos, block_list, bit_positions, Eves_traces, Eve_mode, XOR_noise, record):
+    iterations = len(key_index_list)
+    key_curr = key_index_list[-1]
+    #key_prev = shuffled_key_list[-2]
 
+    for key in range(len(key_index_list)-1):
+            ##reconstruct blocks
+            for i in range(len(bit_positions[key])):
+                for j in range(len(bit_positions[key][i])):
+                    block_list[key][i][j] = key_value_list[key][bit_positions[key][i][j]]
 
-def cascade_EC(X,Y,QBER, max_iter,XOR_noise,Eve_mode):
+    Y_old = key_value_list[-2].copy()
+    key_value_list[-2], Eves_traces = error_detect_correct_blocks(X,key_value_list[-2],block_list[-2],bit_positions[-2],Eves_traces,Eve_mode,XOR_noise,record)
+
+    ##record what bits have been flipped
+    corrected_pos_new = []
+    for i in range(len(Y_old)):
+        if key_value_list[-2][i] != Y_old[i]:
+            corrected_pos_new.append(i)
+
+    if len(key_index_list) == 2:
+        return key_value_list[-2], Eves_traces
+    
+    else:
+        cascade_effect(X, key_index_list[:-1], key_value_list[:-1], corrected_pos[:-1], block_list[:-1], bit_positions[:-1], Eves_traces, Eve_mode, XOR_noise, record)
+        return key_value_list[-2], Eves_traces
+
+def error_detect_correct_blocks(X,Y,blocks,bit_positions,Eves_traces,Eve_mode,XOR_noise,record):
+        current_parities = top_level_parity_check(blocks)
+        correct_parities = []
+        for block_pos in bit_positions:
+
+            if Eve_mode == 0:
+                if iter == 0:
+                    record = True
+                else:
+                    record = False
+            
+            correct_parity, Eves_traces = query_correct_parity(X,block_pos,Eves_traces,XOR_noise,record)
+            correct_parities.append(correct_parity)
+
+        for i in range(len(current_parities)):
+            if current_parities[i] != correct_parities[i]:
+        
+                if Eve_mode == 0: ##top block trace recording only
+                    record = False
+                Y = binary_bit_flip(blocks[i], bit_positions[i], X, Y, Eves_traces,XOR_noise,record)
+        return Y, Eves_traces
+
+def cascade_EC(X, Y, QBER, max_iter, XOR_noise, Eve_mode):
 
     Eves_traces = []
+    N = X.shape[0]
+    orig_perm = np.arange(0,N,1)
+    iter = 0
+    blocksize = 0
+    permutations_list = []
+    iteration_blocks_pos = []
+    iteration_correction = []
+    key_value_list = []
+    block_list = []
+
 
     record = True
     if Eve_mode == 0:
@@ -129,54 +188,35 @@ def cascade_EC(X,Y,QBER, max_iter,XOR_noise,Eve_mode):
     elif Eve_mode == 1:
         record == True
 
-    N = X.shape[0]
-    orig_perm = np.arange(0,N,1)
-    iter = 0
-    blocksize = 0
     while iter < max_iter:
         if iter == 0:
             perm = orig_perm
+            permutations_list.append(perm)
+
         else:
-            #perm2 = np.asarray([9,2,0,7,15,11,14,10,1,12,4,6,17,13,18,19,5,8,16,3])
-            #perm3 = np.asarray([11,16,18,1,19,10,4,17,0,7,6,3,15,8,12,9,5,13,2,14])
             perm = shuffle_key(perm.copy()) ##returns shuffled indexing of Y
-            #if iter == 1:
-             #   perm = perm2
-            #if iter == 2:
-              #  perm = perm3
-        #print("\n#### Iteration {0} ####\n{1} : Permutation of Bob's key".format(iter+1, perm))
+            permutations_list.append(perm)
 
         blocks, blocksize, bit_positions = split_blocks(N,iter,blocksize,QBER, perm,Y)
-        #for i in range(len(blocks)):
-         #   print("Block {0}: {1}  ---> Map to bits of Y in position: {2}".format(i, blocks[i], bit_positions[i]))
+        block_list.append(blocks)
+        iteration_blocks_pos.append(bit_positions)
 
-        current_parities = top_level_parity_check(blocks)
-        correct_parities = []
-        for bit_pos in bit_positions:
-            ##we can pass Z and Eves_traces to learn key here as this attack is used on Alices hardware
-            
-            if Eve_mode == 0:
-                if iter == 0:
-                    record = True
-                else:
-                    record = False
-            
-            correct_parity, Eves_traces = query_correct_parity(X,bit_pos,Eves_traces,XOR_noise,record)
-            correct_parities.append(correct_parity)
+        Y_old = Y.copy()
 
-        #print("Current parities of Bob's blocks:   {0}".format(current_parities))
-        #print("Correct parities of Alice's blocks: {0}".format(correct_parities))
+     
+        Y, Eves_traces = error_detect_correct_blocks(X,Y,blocks,bit_positions,Eves_traces,Eve_mode,XOR_noise,record)
 
-        for i in range(len(current_parities)):
-            if current_parities[i] != correct_parities[i]:
-        
-        ##      print("\n#### Preforming binary algorithm on block {0} #####".format(i))
-                if Eve_mode == 0: ##top block trace recording only
-                    record = False
-                Y = binary_bit_flip(blocks[i], bit_positions[i], X, Y, Eves_traces,XOR_noise,record)
-        
-        #print("{0} : Alice's original key".format(X))
-        #print("{0} : Bob's corrected key".format(Y))
+        key_value_list.append(Y)
+        ##record what bits have been flipped
+        corrected = []
+        for i in range(len(Y)):
+            if Y[i] != Y_old[i]:
+                corrected.append(i)
+        iteration_correction.append(corrected)
+
+        if iter > 0:
+            Y, Eves_traces = cascade_effect(X,permutations_list,key_value_list,iteration_correction, block_list ,iteration_blocks_pos, Eves_traces,Eve_mode, XOR_noise, record)
+
         iter = iter + 1
 
     return Y, Eves_traces
@@ -246,7 +286,7 @@ def recover_secret_majoirty(traces,N,sigma):
     Included_matrix = np.zeros([M,N])
     Conf_vector = np.zeros(N)
     final_key = np.zeros(N)
-    alpha = 10
+    alpha = 0.4 ##emperic
     beta = 2.5
 
 
@@ -279,22 +319,39 @@ def recover_secret_majoirty(traces,N,sigma):
             tot = ones+zeros
             if ones > zeros:
                 final_key[i] = 1
-                Conf_vector[i] = ((ones/tot)**(1-sigma) * (zeros/tot)**(sigma)) - ((zeros/tot)**(1-sigma) * (ones/tot)**(sigma))
-                Conf_vector[i] = ((1-sigma)**(ones) * sigma**(zeros))/((1-sigma)**(zeros) * sigma**(ones))
-                Conf_vector[i] = np.emath.logn(alpha,Conf_vector[i])
+              #  Conf_vector[i] = ((ones/tot)**(1-sigma) * (zeros/tot)**(sigma)) - ((zeros/tot)**(1-sigma) * (ones/tot)**(sigma))
+               # Conf_vector[i] = ((1-sigma)**(ones) * sigma**(zeros)) / ((1-sigma)**(zeros) * sigma**(ones))
+               # Conf_vector[i] = math.log10(Conf_vector[i])
+                #Conf_vector[i] = np.tanh(alpha*(ones-zeros))**(1/(1-sigma)**2)
+                Conf_vector[i] = (1-sigma)**(ones/(ones+zeros)) * (sigma)**(zeros/(ones+zeros))
 
             elif zeros > ones:
                 final_key[i] = 0
-                Conf_vector[i] = ((zeros/tot)**(1-sigma) * (ones/tot)**(sigma)) - ((ones/tot)**(1-sigma) * (zeros/tot)**(sigma))
-                Conf_vector[i] = ((1-sigma)**(zeros) * sigma**(ones))/((1-sigma)**(ones) * sigma**(zeros))
-                Conf_vector[i] = np.emath.logn(alpha,Conf_vector[i])
+               # Conf_vector[i] = ((zeros/tot)**(1-sigma) * (ones/tot)**(sigma)) - ((ones/tot)**(1-sigma) * (zeros/tot)**(sigma))
+             #   Conf_vector[i] = ((1-sigma)**(zeros) * sigma**(ones))/((1-sigma)**(ones) * sigma**(zeros))
+               # Conf_vector[i] = math.log10(Conf_vector[i])
+                #Conf_vector[i] = np.tanh(alpha*(zeros-ones))**(1/(1-sigma)**2)
+                Conf_vector[i] = (1-sigma)**(zeros/(ones+zeros)) * (sigma)**(ones/(ones+zeros))
+
+
 
             else: #ones==zeros
                 final_key[i] = random.choice([0,1])
-                Conf_vector[i] = 0
+                #Conf_vector[i] = 0
+                if final_key[i] == 0:
+                    Conf_vector[i] = (1-sigma)**(zeros/(ones+zeros)) * (sigma)**(ones/(ones+zeros))
+                else:
+                    Conf_vector[i] = (1-sigma)**(ones/(ones+zeros)) * (sigma)**(zeros/(ones+zeros))
+
+
+
             
            # if ones == 0 or zeros == 0:
             #    Conf_vector[i] = np.log10(max(ones,zeros) + 1)
+   # plt.figure()
+  #  plt.bar(np.arange(N),Conf_vector)
+  #  plt.title("Confidence Vector for sigma={0}".format(sigma))
+  #  plt.savefig("results/confidencevec.png")
 
  
     return final_key, H_E, Included_matrix, Conf_vector, P_A
@@ -394,22 +451,27 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
             secondLow = c
 
     unconf_pos = []
+    start_thresh = 0.5
    # if (P_E != P_A).any(): ##P_E == P_A is true for some cases of faulty keys
     iterations = 3
     for i in range(N): ##Gather unconfident values
-        if Conf_vector[i] <= secondLow + 0.01 or Conf_vector[i] <= start_thresh: ##need better system for this
+  #      if Conf_vector[i] <= secondLow + 0.01 or Conf_vector[i] <= start_thresh: ##need better system for this
+        if Conf_vector[i] < start_thresh:
             unconf_pos.append(i)
 
+    invalid_count = 0
     plt.figure()
-    bars = plt.bar(np.arange(N),Conf_vector,width=1,edgecolor='black',linewidth=0.5)
+    bars = plt.bar(np.arange(N),Conf_vector,width=1,edgecolor='black',linewidth=0)
     for i in range(N):
         if misses.__contains__(i):
             bars[i].set_color('black')
+            invalid_count = invalid_count + 1
 
         if unconf_pos.__contains__(i):
             bars[i].set_color('red')
             if misses.__contains__(i):
                 bars[i].set_color('green')
+                invalid_count = invalid_count - 1
 
     plt.xlabel("Bit")
     plt.ylabel("Confidence")
@@ -424,8 +486,16 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
         
     plt.savefig("results/bit_conf_N_{0}_sig_{1}.png".format(N,sigma))
 
-    bs_list = gen_binary_comb(len(unconf_pos))
+    if invalid_count == 0:
+        print("The key can be found by flipping {0} bits -> {1} keys".format(len(unconf_pos),2**len(unconf_pos)))
+    else:
+        print("This key will not be found, {0} incorrect bits were assumed confident".format(invalid_count))
+
+    ###This code computes the valid keys, commented out for now
     valid_bs = []
+
+    """
+    bs_list = gen_binary_comb(len(unconf_pos))
     for bs in bs_list:
         new_key_temp = majority_key.copy()
         for i in range(len(bs)):
@@ -433,6 +503,7 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
         failed, failed_pos, no_failed = Eve_parity_checks(traces,new_key_temp)
         if no_failed == 0:
             valid_bs.append(bs)
+    """
 
     return valid_bs, unconf_pos
 
@@ -536,7 +607,7 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
     X,Y = gen_sifted_keys(N,QBER)
     Y_ec, Eves_traces = cascade_EC(X,Y,QBER,max_iter,XOR_noise,1)
     if (X == Y_ec).all():
-        print("Noise: {0}".format(XOR_noise))
+        print("\nNoise: {0}".format(XOR_noise))
 
         #print("Successfully Corrected Errors!")
         ###Run Attack Here
@@ -555,7 +626,7 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
             for m in misses:
                 if unconf_pos.__contains__(m):
                     included_misses = included_misses + 1
-            if included_misses == len(misses) and len(valid_bs) > 0:
+            if included_misses == len(misses): #and len(valid_bs) > 0:
                 print("Valid List, length: {0}".format(len(valid_bs)))
                 return len(valid_bs)
             else:
@@ -614,8 +685,8 @@ def plot_params(N,QBER,max_iter, err_range):
 
 
 err_range = np.arange(0,0.2001,0.01)
-N = 128
-max_iter = 5
+N = 1000
+max_iter = 3
 QBER = 0.1
 avg_iter = 10
 tb_avg = np.zeros(shape=(21,avg_iter))

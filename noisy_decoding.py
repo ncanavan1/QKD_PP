@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpathces
 import random
+from decimal import Decimal
 import math
 from collections import Counter
 
@@ -279,6 +280,25 @@ def gen_Trace(secret,N,err):
     return trace
  """
 
+def top_offenders(N,traces,P_A,P_E):
+    num_checks = len(traces)
+    offence_count = np.zeros(N)
+    pos_list = np.arange(0,N,1)
+    for i in range(num_checks):
+        if P_A[i] != P_E[i]:
+            offence_trace = traces[i][1]
+            for pos in offence_trace:
+                offence_count[pos] = offence_count[pos] + 1
+    combined =  np.vstack((pos_list,offence_count)).T
+    combined2 = np.argsort(-combined[:,1])
+    combined = combined[combined2]
+    return combined
+    
+
+
+
+
+
 def recover_secret_majoirty(traces,N,sigma):
     M = len(traces)
     H_E = np.zeros([M,N])
@@ -299,7 +319,7 @@ def recover_secret_majoirty(traces,N,sigma):
         if pos.size == 1:
             Conf_vector[pos[0]] = 1
             final_key[pos[0]] = out_parity
-        for i in reversed(range(1,pos.size)):
+        for i in reversed(range(0,pos.size)): ##this was 1,pos.size WHY??
             H_E[check,pos[i]] = inter_parity[i] ^ inter_parity[i-1]
             Included_matrix[check,pos[i]] = 1
         H_E[check,pos[0]] = inter_parity[0]
@@ -338,20 +358,11 @@ def recover_secret_majoirty(traces,N,sigma):
             else: #ones==zeros
                 final_key[i] = random.choice([0,1])
                 #Conf_vector[i] = 0
+
                 if final_key[i] == 0:
                     Conf_vector[i] = (1-sigma)**(zeros/(ones+zeros)) * (sigma)**(ones/(ones+zeros))
                 else:
                     Conf_vector[i] = (1-sigma)**(ones/(ones+zeros)) * (sigma)**(zeros/(ones+zeros))
-
-
-
-            
-           # if ones == 0 or zeros == 0:
-            #    Conf_vector[i] = np.log10(max(ones,zeros) + 1)
-   # plt.figure()
-  #  plt.bar(np.arange(N),Conf_vector)
-  #  plt.title("Confidence Vector for sigma={0}".format(sigma))
-  #  plt.savefig("results/confidencevec.png")
 
  
     return final_key, H_E, Included_matrix, Conf_vector, P_A
@@ -432,6 +443,80 @@ def get_trace_res2(H_E,Included_matrix,bit):
     return res
 
 
+def plot_confidence(Conf_vector,unconf_pos,misses,sigma,mode):
+
+    invalid_count = 0
+    plt.figure()
+    bars = plt.bar(np.arange(N),Conf_vector,width=1,edgecolor='black',linewidth=0)
+    for i in range(N):
+        if misses.__contains__(i):
+            bars[i].set_color('black')
+            invalid_count = invalid_count + 1
+
+        if unconf_pos.__contains__(i):
+            bars[i].set_color('red')
+            if misses.__contains__(i):
+                bars[i].set_color('green')
+                invalid_count = invalid_count - 1
+
+    plt.xlabel("Bit")
+    plt.ylabel("Confidence")
+
+
+
+    blk_p = mpathces.Patch(color='black',label='Error - Confident')
+    blu_p = mpathces.Patch(color='blue', label="Correct - Confident")
+    red_p = mpathces.Patch(color='red',label = "Correct - Unconfident")
+    grn_p = mpathces.Patch(color='green',label="Error - Unconfident")
+
+    plt.legend(handles=[blk_p,grn_p,blu_p,red_p])
+        
+    if mode==0:
+        plt.title("Bit Confidence for N={0}, $\sigma$={1}".format(N,sigma))
+        plt.savefig("results/bit_conf_N_{0}_sig_{1}.png".format(N,sigma))
+
+    if mode==1:
+        plt.title("Bit Confidence for N={0}, $\sigma$={1}, with parity offenders".format(N,sigma))
+        plt.savefig("results/bit_conf_N_{0}_sig_{1}_offenders.png".format(N,sigma))
+
+
+    if invalid_count == 0:
+        print("The key can be found by flipping {0} bits -> {1} keys".format(len(unconf_pos),'{:.2e}'.format(2**len(unconf_pos))))
+    else:
+        print("This key will not be found, {0} incorrect bits were assumed confident".format(invalid_count))
+    return invalid_count
+
+
+def partition (list_in, n):
+    random.shuffle(list_in)
+    return [list_in[i::n] for i in range(n)]
+
+def gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split):
+
+    groups = partition(unconf_pos,int(unconf_len/start_split))
+    for group in groups:
+        grouplen = len(group)
+        bs_list = gen_binary_comb(grouplen)
+        for bs in bs_list:
+            new_key_temp = majority_key.copy()
+            for i in range(len(bs)):
+                new_key_temp[group[i]] = int(new_key_temp[group[i]]) ^ int(bs[i])
+            failed, failed_pos, new_diff = Eve_parity_checks(traces,new_key_temp)
+
+            if new_diff == 0: ##identifies if comes across a valid solution
+                valid_bs.append(bs)
+            elif new_diff < diff_len:
+                for g in group:
+                    if new_key_temp[g] != majority_key[g]:
+                        votes[g] = votes[g] + np.abs(diff_len - new_diff)
+
+           # elif new_diff > diff_len:
+            #    for g in group:
+             #       if new_key_temp[g] != majority_key[g]:
+              #          votes[g] = votes[g] - np.abs(diff_len - new_diff)
+
+    return votes, valid_bs
+
 def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_thresh, misses,traces,sigma):
     #P_E = calc_PE(H_E,N,M)
     P_E = calc_PE_from_key(majority_key,traces,M)
@@ -459,37 +544,56 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
         if Conf_vector[i] < start_thresh:
             unconf_pos.append(i)
 
-    invalid_count = 0
-    plt.figure()
-    bars = plt.bar(np.arange(N),Conf_vector,width=1,edgecolor='black',linewidth=0)
-    for i in range(N):
-        if misses.__contains__(i):
-            bars[i].set_color('black')
-            invalid_count = invalid_count + 1
+    invalid_count = plot_confidence(Conf_vector,unconf_pos,misses,sigma,0)
 
-        if unconf_pos.__contains__(i):
-            bars[i].set_color('red')
-            if misses.__contains__(i):
-                bars[i].set_color('green')
-                invalid_count = invalid_count - 1
 
-    plt.xlabel("Bit")
-    plt.ylabel("Confidence")
-    plt.title("Bit Confidence for N={0}, $\sigma$={1}".format(N,sigma))
+        ##This code is still required, but having it out makes developing the flip vote easier
+    
+    offenders = top_offenders(N,traces,P_A,P_E)
+    updated_unconf_pos = []
 
-    blk_p = mpathces.Patch(color='black',label='Error - Confident')
-    blu_p = mpathces.Patch(color='blue', label="Correct - Confident")
-    red_p = mpathces.Patch(color='red',label = "Correct - Unconfident")
-    grn_p = mpathces.Patch(color='green',label="Error - Unconfident")
+    for o in offenders:
+        if o[1] > 1 and unconf_pos.__contains__(o[0]):
+            updated_unconf_pos.append(int(o[0]))
+    
+    invalid_count = plot_confidence(Conf_vector,updated_unconf_pos,misses,sigma,1) 
+    unconf_pos = updated_unconf_pos.copy()
 
-    plt.legend(handles=[blk_p,grn_p,blu_p,red_p])
-        
-    plt.savefig("results/bit_conf_N_{0}_sig_{1}.png".format(N,sigma))
 
+    valid_bs = []
     if invalid_count == 0:
-        print("The key can be found by flipping {0} bits -> {1} keys".format(len(unconf_pos),2**len(unconf_pos)))
-    else:
-        print("This key will not be found, {0} incorrect bits were assumed confident".format(invalid_count))
+        max_unconf = 10
+        start_split = 4
+        votes = np.zeros(N)
+        unconf_len = len(unconf_pos)
+        if unconf_len >= max_unconf:
+            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
+            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
+            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
+            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
+            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
+            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
+            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
+            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
+            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
+
+
+            plt.figure()
+            bars = plt.bar(np.arange(N),votes,width=1,edgecolor='black',linewidth=0)
+            for i in range(N):
+                if misses.__contains__(i):
+                    bars[i].set_color('black')
+                    invalid_count = invalid_count + 1
+
+                if unconf_pos.__contains__(i):
+                    bars[i].set_color('red')
+                    if misses.__contains__(i):
+                        bars[i].set_color('green')
+                        invalid_count = invalid_count - 1
+            plt.title("Votes for changing bits for N={0}, $\sigma$={1}".format(N,sigma))
+            plt.savefig("results/flip_votes_N_{0}_sig_{1}.png".format(N,sigma))
+            k = 7               
+
 
     ###This code computes the valid keys, commented out for now
     valid_bs = []
@@ -685,7 +789,7 @@ def plot_params(N,QBER,max_iter, err_range):
 
 
 err_range = np.arange(0,0.2001,0.01)
-N = 1000
+N = 128
 max_iter = 3
 QBER = 0.1
 avg_iter = 10

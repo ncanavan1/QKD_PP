@@ -363,6 +363,7 @@ def recover_secret_majoirty(traces,N,sigma):
                     Conf_vector[i] = (1-sigma)**(zeros/(ones+zeros)) * (sigma)**(ones/(ones+zeros))
                 else:
                     Conf_vector[i] = (1-sigma)**(ones/(ones+zeros)) * (sigma)**(zeros/(ones+zeros))
+                Conf_vector[i] = 0.1
 
  
     return final_key, H_E, Included_matrix, Conf_vector, P_A
@@ -491,9 +492,9 @@ def partition (list_in, n):
     random.shuffle(list_in)
     return [list_in[i::n] for i in range(n)]
 
-def gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split):
+def gather_votes(N,votes,valid_bs,occourances,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split,low_score):
 
-    groups = partition(unconf_pos,int(unconf_len/start_split))
+    groups = partition(unconf_pos,int(unconf_len/start_split)) ##random partition
     for group in groups:
         grouplen = len(group)
         bs_list = gen_binary_comb(grouplen)
@@ -508,14 +509,48 @@ def gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,d
             elif new_diff < diff_len:
                 for g in group:
                     if new_key_temp[g] != majority_key[g]:
-                        votes[g] = votes[g] + np.abs(diff_len - new_diff)
+                        votes[g] = votes[g] + (np.abs(diff_len - new_diff)/occourances[int(g)])
+                if low_score == [[],[],[]] or new_diff < low_score[0] :
+                    low_score[0] = new_diff
+                    low_score[1] = bs
+                    low_score[2] = group
 
-           # elif new_diff > diff_len:
-            #    for g in group:
-             #       if new_key_temp[g] != majority_key[g]:
-              #          votes[g] = votes[g] - np.abs(diff_len - new_diff)
+            elif new_diff > diff_len:
+                for g in group:
+                    if new_key_temp[g] != majority_key[g]:
+                        votes[g] = votes[g] - (np.abs(diff_len - new_diff)/occourances[int(g)])
 
+    return votes, valid_bs, groups, low_score
+
+
+def recount_votes(N,groups_list,valid_bs,occourances,majority_key,traces,diff_len):
+    
+    votes = np.zeros(N)
+    for groups in groups_list:
+        for group in groups:
+            grouplen = len(group)
+            bs_list = gen_binary_comb(grouplen)
+
+            for bs in bs_list:
+                new_key_temp = majority_key.copy()
+                for i in range(len(bs)):
+                    new_key_temp[group[i]] = int(new_key_temp[group[i]]) ^ int(bs[i])
+                failed, failed_pos, new_diff = Eve_parity_checks(traces,new_key_temp)
+
+                if new_diff == 0: ##identifies if comes across a valid solution
+                    valid_bs.append(bs)
+                elif new_diff < diff_len:
+                    for g in group:
+                        if new_key_temp[g] != majority_key[g]:
+                            votes[g] = votes[g] + (np.abs(diff_len - new_diff)/occourances[int(g)])
+
+                elif new_diff > diff_len:
+                    for g in group:
+                        if new_key_temp[g] != majority_key[g]:
+                            votes[g] = votes[g] - (np.abs(diff_len - new_diff)/occourances[int(g)])
     return votes, valid_bs
+
+
 
 def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_thresh, misses,traces,sigma):
     #P_E = calc_PE(H_E,N,M)
@@ -551,9 +586,11 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
     
     offenders = top_offenders(N,traces,P_A,P_E)
     updated_unconf_pos = []
-
+    offender_thresh = 1
     for o in offenders:
-        if o[1] > 1 and unconf_pos.__contains__(o[0]):
+        if o[1] > offender_thresh and unconf_pos.__contains__(o[0]):
+            updated_unconf_pos.append(int(o[0]))
+        elif Conf_vector[int(o[0])] == 0.1:
             updated_unconf_pos.append(int(o[0]))
     
     invalid_count = plot_confidence(Conf_vector,updated_unconf_pos,misses,sigma,1) 
@@ -564,35 +601,80 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
     if invalid_count == 0:
         max_unconf = 10
         start_split = 4
-        votes = np.zeros(N)
         unconf_len = len(unconf_pos)
         if unconf_len >= max_unconf:
-            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
-            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
-            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
-            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
-            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
-            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
-            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
-            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
-            votes, valid_bs = gather_votes(N,votes,valid_bs,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,start_split)
 
+            ##count number of occourances in traces
+            ##use this to normalise vote values
 
-            plt.figure()
-            bars = plt.bar(np.arange(N),votes,width=1,edgecolor='black',linewidth=0)
-            for i in range(N):
-                if misses.__contains__(i):
-                    bars[i].set_color('black')
-                    invalid_count = invalid_count + 1
+            occourances = np.zeros(N)
+            for trace in traces:
+                pos = trace[1]
+                for p in pos:
+                    occourances[p] = occourances[p] + 1
 
-                if unconf_pos.__contains__(i):
-                    bars[i].set_color('red')
+            majority_key_old = majority_key.copy()
+            for it in range(1):
+                groupslist = []
+                low_score_list = []
+                
+                votes = np.zeros(N)
+                for v in range(10):
+                    low_score = [[],[],[]]
+                    votes, valid_bs, groups, low_score = gather_votes(N,votes,valid_bs,occourances,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,3,low_score)
+                    groupslist.append(groups)
+                    low_score_list.append(low_score)
+            #   for v in range(5):
+            #      votes, valid_bs = gather_votes(N,votes,valid_bs,occourances,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,3)
+        #     for v in range(5):
+            #        votes, valid_bs = gather_votes(N,votes,valid_bs,occourances,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,4)
+        #       for v in range(5):
+        #          votes, valid_bs = gather_votes(N,votes,valid_bs,occourances,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,5)
+
+                plt.figure()
+                bars = plt.bar(np.arange(N),votes,width=1,edgecolor='black',linewidth=0)
+                for i in range(N):
                     if misses.__contains__(i):
-                        bars[i].set_color('green')
-                        invalid_count = invalid_count - 1
-            plt.title("Votes for changing bits for N={0}, $\sigma$={1}".format(N,sigma))
-            plt.savefig("results/flip_votes_N_{0}_sig_{1}.png".format(N,sigma))
-            k = 7               
+                        bars[i].set_color('black')
+                        invalid_count = invalid_count + 1
+
+                    if unconf_pos.__contains__(i):
+                        bars[i].set_color('red')
+                        if misses.__contains__(i):
+                            bars[i].set_color('green')
+                            invalid_count = invalid_count - 1
+                plt.title("Votes for changing bits for N={0}, $\sigma$={1}, iter {2}".format(N,sigma,it))
+                plt.savefig("results/flip_votes_N_{0}_sig_{1}_iter{2}.png".format(N,sigma,it))
+                
+
+                ##flip max value from votes
+                maxpos = np.argmax(votes)
+                majority_key[maxpos] = int(majority_key[maxpos]) ^ 1
+                unconf_pos.remove(maxpos)
+                for groups in groupslist:
+                    for group in groups:
+                        if group.__contains__(maxpos):
+                            group.remove(maxpos)
+
+
+                votes, valid_bs = recount_votes(N,groupslist,valid_bs,occourances,majority_key,traces,diff_len)
+
+
+                plt.figure()
+                bars = plt.bar(np.arange(N),votes,width=1,edgecolor='black',linewidth=0)
+                for i in range(N):
+                    if misses.__contains__(i):
+                        bars[i].set_color('black')
+                        invalid_count = invalid_count + 1
+
+                    if unconf_pos.__contains__(i):
+                        bars[i].set_color('red')
+                        if misses.__contains__(i):
+                            bars[i].set_color('green')
+                            invalid_count = invalid_count - 1
+                plt.title("Recount for changing bits for N={0}, $\sigma$={1}, iter {2}".format(N,sigma,it))
+                plt.savefig("results/recount_votes_N_{0}_sig_{1}_iter{2}.png".format(N,sigma,it))
+                
 
 
     ###This code computes the valid keys, commented out for now

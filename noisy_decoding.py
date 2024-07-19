@@ -264,21 +264,6 @@ def gen_secret(N):
     for i in range(N):
         xA[i] = np.random.choice([0,1])
     return xA
- 
-"""
-def gen_Trace(secret,N,err):
-    trace = np.zeros([N])
-    trace[0] = int(secret[0]) ^ 0
-    for i in range(1,N):
-        trace[i] = int(trace[i-1]) ^ int(secret[i])
- 
-    N_errs = int(np.floor(N*err))
-    err_pos = random.sample(range(N),N_errs)
-    for i in range(N):
-        if i in err_pos:
-            trace[i] = (trace[i] + 1) % 2
-    return trace
- """
 
 def top_offenders(N,traces,P_A,P_E):
     num_checks = len(traces)
@@ -294,10 +279,6 @@ def top_offenders(N,traces,P_A,P_E):
     combined = combined[combined2]
     return combined
     
-
-
-
-
 
 def recover_secret_majoirty(traces,N,sigma):
     M = len(traces)
@@ -325,7 +306,11 @@ def recover_secret_majoirty(traces,N,sigma):
         H_E[check,pos[0]] = inter_parity[0]
         check = check + 1
 
- 
+   # test = Included_matrix[:,0:check]
+    #incl_inv = np.linalg.inv(test)
+    
+    random_choice_pos = []
+
     for i in range(N):
         if Conf_vector[i] != 1:
             ones = 0
@@ -356,8 +341,10 @@ def recover_secret_majoirty(traces,N,sigma):
 
 
             else: #ones==zeros
-                final_key[i] = random.choice([0,1])
+                #final_key[i] = random.choice([0,1])
                 #Conf_vector[i] = 0
+                final_key[i] = -1
+                random_choice_pos.append(i)
 
                 if final_key[i] == 0:
                     Conf_vector[i] = (1-sigma)**(zeros/(ones+zeros)) * (sigma)**(ones/(ones+zeros))
@@ -365,9 +352,49 @@ def recover_secret_majoirty(traces,N,sigma):
                     Conf_vector[i] = (1-sigma)**(ones/(ones+zeros)) * (sigma)**(zeros/(ones+zeros))
                 Conf_vector[i] = 0.1
 
- 
+    if len(random_choice_pos) > 0:
+        print("Key contains {0} random choices".format(len(random_choice_pos)))
+        
+        ####ensure that we don't try too large spaces
+        if len(random_choice_pos) <= 12:
+            diff, min_list = test_random_choices(final_key,random_choice_pos,traces)
+        else:
+            for pos in random_choice_pos:
+                final_key[pos] = random.choice([0,1])
+
+
     return final_key, H_E, Included_matrix, Conf_vector, P_A
 
+def test_random_choices(key,random_pos,traces):
+    rand_len = len(random_pos)
+    rand_combs = gen_binary_comb(rand_len)
+    min_list = []
+
+    for pos in random_pos:
+        key[pos] = 0
+    failed, failed_pos, diff = Eve_parity_checks(traces,key)
+    min_list.append(rand_combs[0])
+
+    for comb in rand_combs[1:]:
+        for i in range(rand_len):
+            key[random_pos[i]] = comb[i]
+        failed, failed_pos, new_diff = Eve_parity_checks(traces,key)
+      
+        if new_diff == diff:
+            min_list.append(comb)
+        elif new_diff < diff:
+            min_list = []
+            min_list.append(comb)
+            diff =  new_diff
+
+    chosen_comb = min_list[0]
+    if len(min_list) > 0:
+        chosen_comb = random.choice(min_list)
+    for i in range(rand_len):
+        key[random_pos[i]] = chosen_comb[i]
+        
+
+    return diff, min_list  
 
 def Eve_parity_checks(traces,eve_key):
     ##loop through all traces and compare Eves parity with Alices parity
@@ -515,10 +542,10 @@ def gather_votes(N,votes,valid_bs,occourances,invalid_count,unconf_pos,majority_
                     low_score[1] = bs
                     low_score[2] = group
 
-            elif new_diff > diff_len:
-                for g in group:
-                    if new_key_temp[g] != majority_key[g]:
-                        votes[g] = votes[g] - (np.abs(diff_len - new_diff)/occourances[int(g)])
+            #elif new_diff > diff_len:
+             #   for g in group:
+              #      if new_key_temp[g] != majority_key[g]:
+               #         votes[g] = votes[g] - (np.abs(diff_len - new_diff)/occourances[int(g)])
 
     return votes, valid_bs, groups, low_score
 
@@ -621,7 +648,7 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
                 votes = np.zeros(N)
                 for v in range(10):
                     low_score = [[],[],[]]
-                    votes, valid_bs, groups, low_score = gather_votes(N,votes,valid_bs,occourances,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,3,low_score)
+                    votes, valid_bs, groups, low_score = gather_votes(N,votes,valid_bs,occourances,invalid_count,unconf_pos,majority_key,traces,diff_len,unconf_len,4,low_score)
                     groupslist.append(groups)
                     low_score_list.append(low_score)
             #   for v in range(5):
@@ -648,13 +675,14 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
                 
 
                 ##flip max value from votes
+                """
                 maxpos = np.argmax(votes)
                 majority_key[maxpos] = int(majority_key[maxpos]) ^ 1
                 unconf_pos.remove(maxpos)
                 for groups in groupslist:
                     for group in groups:
                         if group.__contains__(maxpos):
-                            group.remove(maxpos)
+                            group.remove(maxpos) """
 
 
                 votes, valid_bs = recount_votes(N,groupslist,valid_bs,occourances,majority_key,traces,diff_len)

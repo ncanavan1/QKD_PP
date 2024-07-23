@@ -5,6 +5,8 @@ import random
 from decimal import Decimal
 import math
 from collections import Counter
+import linalgtools as my_solver
+from gf2 import solve_gf2
 
 #########################################################################
 #########################################################################
@@ -607,6 +609,47 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
             unconf_pos.append(i)
 
     invalid_count = plot_confidence(Conf_vector,unconf_pos,misses,sigma,0)
+
+
+    # Solve for x using linear algebra techniques
+    #################
+
+    Included_matrix_new = Included_matrix.copy()
+    P_A_new = P_A.copy()
+    dels = 0
+    for i in range(N):
+        if not unconf_pos.__contains__(i):
+            conf_x_vec = majority_key[i]*Included_matrix[:,i]
+            delpos = i - dels
+            Included_matrix_new = np.delete(Included_matrix_new,delpos,1)
+            P_A_new = (P_A_new - conf_x_vec) % 2
+            dels = dels + 1
+
+    ###remove any all zero rows (occours when all paity values are known)
+    temp = Included_matrix_new.copy()
+    temp_PA = P_A_new.copy()
+    dels = 0
+    for i in range(Included_matrix_new.shape[0]):
+        if (Included_matrix_new[i,:] == np.zeros(len(unconf_pos))).all():
+            temp = np.delete(temp,i-dels,0)
+            temp_PA = np.delete(temp_PA,i-dels,0)
+            dels = dels + 1
+    Included_matrix_new = temp
+    P_A_new = temp_PA
+
+
+    row_ech,b,row_order = my_solver.row_echelon_form(Included_matrix_new,P_A_new)
+    for i in range(row_ech.shape[0]):
+        if (row_ech[i,:] == np.zeros(len(unconf_pos))).all():
+            row_ech = row_ech[:i,:]
+            b = b[:i]
+            break
+    
+    if row_ech.shape[0] == row_ech.shape[1]:
+        solution_x = np.linalg.solve(row_ech,b)
+    
+
+    #################
 
 
         ##This code is still required, but having it out makes developing the flip vote easier

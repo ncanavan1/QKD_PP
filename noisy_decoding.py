@@ -390,13 +390,16 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
             break
 
     correct_soln = []
-    for i in range(len(unconf_pos)):
+    for i in unconf_pos:
         correct_soln.append(int(Y[i]))
 
-    if row_ech.shape[0] == row_ech.shape[1]:
-        solution_x = np.linalg.solve(row_ech,b)%2
-        print(solution_x)
-        print(correct_soln)
+    calc_soln = my_solver.find_solution(row_ech,b)
+
+    for soln in calc_soln:
+        solnl = soln.tolist()
+        if (solnl == correct_soln):
+            print("Correct solution contained in solution space of length: {0}".format(calc_soln.shape[0]))
+            break
     
 
     #################
@@ -652,8 +655,8 @@ def plot_params(N,QBER,max_iter, err_range):
 
 
 err_range = np.arange(0,0.2001,0.01)
-N = 20
-max_iter = 2
+N = 300
+max_iter = 3
 QBER = 0.1
 avg_iter = 10
 tb_avg = np.zeros(shape=(21,avg_iter))

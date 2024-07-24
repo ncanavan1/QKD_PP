@@ -84,6 +84,23 @@ def row_echelon_form(matrix,b):
 	return matrix, b, row_order
 
 
+def gen_binary_comb(n):
+	bin_strings = []
+	def get_bin(n,bs=''):
+		if len(bs) == n:
+			bin_strings.append(bs)
+		else:
+			get_bin(n, bs + '0')
+			get_bin(n, bs + '1')
+	get_bin(n)
+	for i in range(len(bin_strings)):
+		bs = []
+		for d in bin_strings[i]:
+			bs.append(int(d))
+		bin_strings[i] = bs
+	return bin_strings
+
+
 def find_solution(matrix,b):
 
 	if is_row_echelon_form(matrix):
@@ -106,28 +123,53 @@ def find_solution(matrix,b):
 			if not basic_variables.__contains__(i):
 				free_variables.append(i)
 
-		sol_list = []
+		eqn_list = []
 		for i in range(nrows):
 			eqn = []
-			eqn.append(b[i][0])
 			for col in range(basic_variables[i]+1,ncols):
 				if matrix[i,col] == 1:
 					eqn.append(col)
-			sol_list.append(eqn)
+			eqn_list.append(eqn)
+		
+		
+		free_solutions = gen_binary_comb(len(free_variables))
+		free_variables_space = np.asarray([free_variables]+free_solutions)
 
-		k=7
+		basic_solution_space = []
+		for i in range(1,free_variables_space.shape[0]):
+			basic_solution = []
+			for j in range(len(eqn_list)):
+				bvar_val = int(b[j])
+				for fv in eqn_list[j]:
+					fv_index = np.where(free_variables_space[0] == fv)[0][0] ##locate free variable position
+					bvar_val = (bvar_val + free_variables_space[i,fv_index])%2
+				basic_solution.append(bvar_val)
+			basic_solution_space.append(basic_solution)
+		
+		basic_solution_space = np.asarray([basic_variables] + basic_solution_space)
+		
+		full_solution_space = np.zeros([len(free_solutions),matrix.shape[1]])
+		for i in range(matrix.shape[1]):
+			ctr = 0
+			for j in free_variables_space[0]:
+				full_solution_space[:,j] = free_variables_space[1:,ctr]
+				ctr = ctr + 1
+			ctr = 0
+			for j in basic_solution_space[0]:
+				full_solution_space[:,j] = basic_solution_space[1:,ctr]
+				ctr = ctr + 1
+		return full_solution_space 
 
-	
 	else:
 		print("Invalid Matrix Form")
 	
 
 
 
-matrix = np.array([[1,1,0,1,0,0],[1,0,1,0,1,0],[0,1,1,0,0,1]]) 
-b = np.array([[1],[0],[0]])
+#matrix = np.array([[1,1,0,1,0,0],[1,0,1,0,1,0],[0,1,1,0,0,1]]) 
+#b = np.array([[1],[0],[0]])
 
-"""
+
 matrix = np.array([
 	[1,1,0,0,0,0],
 	[0,0,1,1,0,0],
@@ -142,7 +184,7 @@ matrix = np.array([
 	[0,0,0,0,1,1]]
 )
 b = np.array([[0],[0],[1],[0],[1],[1],[0],[1],[0],[0],[1]])
-"""
+
 
 print("Matrix Before Converting:") 
 print(matrix)

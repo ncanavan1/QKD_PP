@@ -169,7 +169,7 @@ def find_solution(matrix,b):
 #matrix = np.array([[1,1,0,1,0,0],[1,0,1,0,1,0],[0,1,1,0,0,1]]) 
 #b = np.array([[1],[0],[0]])
 
-
+"""
 matrix = np.array([
 	[1,1,0,0,0,0],
 	[0,0,1,1,0,0],
@@ -205,3 +205,4 @@ else:
 #b = np.array([[1],[0],[0]])
 
 find_solution(matrix,b)
+"""

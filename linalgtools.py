@@ -101,6 +101,48 @@ def gen_binary_comb(n):
 	return bin_strings
 
 
+def read_off_basic_variables(matrix,b):
+	if is_row_echelon_form(matrix):
+		basic_variables = []
+		free_variables = []
+
+		nrows = matrix.shape[0]
+		ncols = matrix.shape[1]
+
+		start_col = 0
+		for row in range(nrows):
+			for col in range(start_col,ncols):
+				if matrix[row,col] == 1:
+					if np.count_nonzero(matrix[:,col]) == 1 and np.count_nonzero(matrix[row,:col]) == 0:
+						basic_variables.append(col)
+						start_col = col
+						break
+		
+		for i in range(ncols):
+			if not basic_variables.__contains__(i):
+				free_variables.append(i)
+
+		eqn_list = []
+		for i in range(nrows):
+			eqn = []
+			for col in range(basic_variables[i],ncols):
+				if matrix[i,col] == 1:
+					eqn.append(col)
+			eqn_list.append(eqn)
+
+		x = np.ones(matrix.shape[1])*-1
+		for i in range(len(eqn_list)):
+			if len(eqn_list[i]) == 1:
+				x[int(eqn_list[i][0])] = b[i]
+		return x
+
+
+
+		
+
+
+
+
 def find_solution(matrix,b):
 
 	if is_row_echelon_form(matrix):

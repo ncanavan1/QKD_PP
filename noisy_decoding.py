@@ -579,6 +579,7 @@ def run_EC_topblock_only(N,QBER,XOR_noise,max_iter):
 #        print("Unsuccessful Error Correction")
         return -1
     
+
 def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
     X,Y = cascade.gen_sifted_keys(N,QBER)
     Y_ec, Eves_traces = cascade.cascade_EC(X,Y,QBER,max_iter,XOR_noise,1)
@@ -589,12 +590,18 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
         ###Run Attack Here
 
         majority_key, H_E, Included_matrix, Conf_vector,P_A = recover_secret_majoirty(Eves_traces,N,XOR_noise)
-
-
         ####solve system in completely unknown
-        row_ech, b, row_order = my_solver.row_echelon_form(Included_matrix,P_A)
-        solution = my_solver.find_solution(row_ech,b)
+        row_ech, b, row_order = my_solver.row_echelon_form(Included_matrix.copy(),P_A.copy())
+        partial_solution = my_solver.read_off_basic_variables(row_ech,b) 
+        
+        f = 0
+        for i in range(len(partial_solution)):
+            if partial_solution[i] != -1:
+               # print("{0} {1}".format(partial_solution[i],Y[i]))   
+                f = f + 1
+        print("{0}% of key discovered".format((f*100)/len(Y)))  
 
+       
 
         misses = []
         conf_key = majority_key.copy()
@@ -668,7 +675,7 @@ def plot_params(N,QBER,max_iter, err_range):
 
 
 err_range = np.arange(0,0.2001,0.01)
-N = 100
+N = 500
 max_iter = 3
 QBER = 0.1
 avg_iter = 10

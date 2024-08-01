@@ -26,16 +26,14 @@ def top_offenders(N,traces,P_A,P_E):
     return combined
     
 
-def recover_secret_majoirty(traces,N,sigma):
-    M = len(traces)
-    H_E = np.zeros([M,N])
-    P_A = np.zeros(M)
-    Included_matrix = np.zeros([M,N])
-    Conf_vector = np.zeros(N)
-    final_key = np.zeros(N)
-    alpha = 0.4 ##emperic
-    beta = 2.5
+def gen_system_from_trace(traces,N):
 
+    M = len(traces)
+    H_E = np.zeros([M,N]) ##Hamming weight matrix
+    P_A = np.zeros(M)
+    Included_matrix = np.zeros([M,N]) ##linear system matrix
+    Conf_vector = np.zeros(N)
+    partial_key = np.zeros(N)
 
     check = 0
     for trace in traces:
@@ -45,19 +43,29 @@ def recover_secret_majoirty(traces,N,sigma):
         P_A[check] = out_parity
         if pos.size == 1:
             Conf_vector[pos[0]] = 1
-            final_key[pos[0]] = out_parity
-        for i in reversed(range(0,pos.size)): ##this was 1,pos.size WHY??
+            partial_key[pos[0]] = out_parity
+        for i in reversed(range(0,pos.size)): 
             H_E[check,pos[i]] = inter_parity[i] ^ inter_parity[i-1]
             Included_matrix[check,pos[i]] = 1
         H_E[check,pos[0]] = inter_parity[0]
         check = check + 1
+    return Included_matrix, P_A, H_E, Conf_vector, partial_key
 
-   # test = Included_matrix[:,0:check]
-    #incl_inv = np.linalg.inv(test)
-    
+def recover_secret_majoirty(N, traces, sigma, Included_matrix, P_A, H_E, Conf_vector, partial_key):
+     
+    M = Included_matrix.shape[0]
+    alpha = 0.4 ##emperic
+    beta = 2.5
+
     random_choice_pos = []
 
+
     for i in range(N):
+
+        ##this should only be true for values solved by the lin alg approach.
+        if partial_key[i] != -1:
+            Conf_vector[i] = 1
+
         if Conf_vector[i] != 1:
             ones = 0
             zeros = 0
@@ -69,47 +77,24 @@ def recover_secret_majoirty(traces,N,sigma):
                         ones = ones + 1
             tot = ones+zeros
             if ones > zeros:
-                final_key[i] = 1
-              #  Conf_vector[i] = ((ones/tot)**(1-sigma) * (zeros/tot)**(sigma)) - ((zeros/tot)**(1-sigma) * (ones/tot)**(sigma))
-               # Conf_vector[i] = ((1-sigma)**(ones) * sigma**(zeros)) / ((1-sigma)**(zeros) * sigma**(ones))
-               # Conf_vector[i] = math.log10(Conf_vector[i])
-                #Conf_vector[i] = np.tanh(alpha*(ones-zeros))**(1/(1-sigma)**2)
+                partial_key[i] = 1
                 Conf_vector[i] = (1-sigma)**(ones/(ones+zeros)) * (sigma)**(zeros/(ones+zeros))
 
             elif zeros > ones:
-                final_key[i] = 0
-               # Conf_vector[i] = ((zeros/tot)**(1-sigma) * (ones/tot)**(sigma)) - ((ones/tot)**(1-sigma) * (zeros/tot)**(sigma))
-             #   Conf_vector[i] = ((1-sigma)**(zeros) * sigma**(ones))/((1-sigma)**(ones) * sigma**(zeros))
-               # Conf_vector[i] = math.log10(Conf_vector[i])
-                #Conf_vector[i] = np.tanh(alpha*(zeros-ones))**(1/(1-sigma)**2)
+                partial_key[i] = 0
                 Conf_vector[i] = (1-sigma)**(zeros/(ones+zeros)) * (sigma)**(ones/(ones+zeros))
 
 
-
+            ###Keep as unknown as run re run linear solver to determine
             else: #ones==zeros
-                #final_key[i] = random.choice([0,1])
-                #Conf_vector[i] = 0
-                final_key[i] = -1
+                partial_key[i] = -1
                 random_choice_pos.append(i)
-
-                if final_key[i] == 0:
-                    Conf_vector[i] = (1-sigma)**(zeros/(ones+zeros)) * (sigma)**(ones/(ones+zeros))
-                else:
-                    Conf_vector[i] = (1-sigma)**(ones/(ones+zeros)) * (sigma)**(zeros/(ones+zeros))
-                Conf_vector[i] = 0.1
-
-    if len(random_choice_pos) > 0:
-        print("Key contains {0} random choices".format(len(random_choice_pos)))
-        
-        ####ensure that we don't try too large spaces
-        if len(random_choice_pos) <= 12:
-            diff, min_list = test_random_choices(final_key,random_choice_pos,traces)
-        else:
-            for pos in random_choice_pos:
-                final_key[pos] = random.choice([0,1])
+                Conf_vector[i] = 0
 
 
-    return final_key, H_E, Included_matrix, Conf_vector, P_A
+    return partial_key, H_E, Included_matrix, Conf_vector, P_A, random_choice_pos
+
+
 
 def test_random_choices(key,random_pos,traces):
     rand_len = len(random_pos)
@@ -183,10 +168,6 @@ def calc_PE_from_key(key,traces,M):
         i = i+1
     return np.reshape(PE,M)
 
-
-
-
-
 def gen_binary_comb(n):
     bin_strings = []
     def get_bin(n,bs=''):
@@ -218,7 +199,7 @@ def get_trace_res2(H_E,Included_matrix,bit):
 
 
 def plot_confidence(Conf_vector,unconf_pos,misses,sigma,mode):
-
+    N = len(Conf_vector)
     invalid_count = 0
     mis_pos = []
     plt.figure()
@@ -261,6 +242,7 @@ def plot_confidence(Conf_vector,unconf_pos,misses,sigma,mode):
         print("The key can be found by flipping {0} bits -> {1} keys".format(len(unconf_pos),'{:.2e}'.format(2**len(unconf_pos))))
     else:
         print("This key will not be found, {0} incorrect bits were assumed confident".format(invalid_count))
+    plt.clf()
     return invalid_count, mis_pos
 
 
@@ -409,7 +391,7 @@ def divide_and_parity_check(unconf_pos,traces,majority_key,diff_len,misses,sigma
 
 
 ##Obtains a solution space for a linear system representation of the list of parity checks
-def linear_system_solver(Included_matrix,P_A,majority_key,unconf_pos,Y):
+def linear_system_solver(N,Included_matrix,P_A,partial_key,unconf_pos,Y):
 
     debugging = True
      # Solve for x using linear algebra techniques
@@ -422,7 +404,7 @@ def linear_system_solver(Included_matrix,P_A,majority_key,unconf_pos,Y):
     ###build a new matrix that includes only the variables (bits) still unconfident
     for i in range(N):
         if not unconf_pos.__contains__(i):
-            conf_x_vec = majority_key[i]*Included_matrix[:,i]
+            conf_x_vec = partial_key[i]*Included_matrix[:,i]
             delpos = i - dels
             Included_matrix_new = np.delete(Included_matrix_new,delpos,1)
             P_A_new = (P_A_new - conf_x_vec) % 2
@@ -441,34 +423,46 @@ def linear_system_solver(Included_matrix,P_A,majority_key,unconf_pos,Y):
     P_A_new = temp_PA
 
     ##convert linear system to reduced row echelon form
+    print("Converting to RREF...")
     row_ech,b,row_order = my_solver.row_echelon_form(Included_matrix_new,P_A_new)
 
   
     ##Get solution space for linear system
-    calc_soln = my_solver.find_solution(row_ech,b)
+    print("Solving solution of size {0}x{1}...".format(row_ech.shape[0],row_ech.shape[1]))
+    num_free_var = row_ech.shape[1] - row_ech.shape[0]
+    if num_free_var <= 12:
+        calc_soln = my_solver.find_solution(row_ech,b)
+    
+        if debugging == True:
+            ##Alices actual solution (used only to verify our algoithm works, not available in real scenario)
+            correct_soln = []
+            unconf_pos.sort()
+            for i in unconf_pos:
+                correct_soln.append(int(Y[i]))
 
-    if debugging == True:
-        ##Alices actual solution (used only to verify our algoithm works, not available in real scenario)
-        correct_soln = []
-        for i in unconf_pos:
-            correct_soln.append(int(Y[i]))
+            found = False
+            if calc_soln is not None:
+                for soln in calc_soln:
+                    solnl = soln.tolist()
+                    if (solnl == correct_soln):
+                        print("Correct solution contained in solution space of length: {0}".format(calc_soln.shape[0]))
+                        found = True
+                        break
+                if found == False:
+                    print("No correct solution contained in solution space of length: {0}".format(calc_soln.shape[0]))
 
+    else:
+        calc_soln = []
         found = False
-        for soln in calc_soln:
-            solnl = soln.tolist()
-            if (solnl == correct_soln):
-                print("Correct solution contained in solution space of length: {0}".format(calc_soln.shape[0]))
-                found = True
-                break
-        if found == False:
-            print("No correct solution contained in solution space of length: {0}".format(calc_soln.shape[0]))
-    return calc_soln
+        print("Solution space too large with {0} free variables".format(num_free_var))
+
+    return calc_soln, found
     
 
 
-def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_thresh, misses,traces,sigma, Y):
+def confidence_flip(N,M,partial_key,H_E,Included_matrix,Conf_vector,P_A,start_thresh, misses,traces,sigma, Y):
     #P_E = calc_PE(H_E,N,M)
-    P_E = calc_PE_from_key(majority_key,traces,M)
+    P_E = calc_PE_from_key(partial_key,traces,M)
     diff = (P_E + P_A)%2
     diff_len = 0
     for d in diff:
@@ -495,8 +489,6 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
 
     invalid_count, mis_pos = plot_confidence(Conf_vector,unconf_pos,misses,sigma,0)
     
-    solutions = linear_system_solver(Included_matrix,P_A,majority_key,unconf_pos,Y)
-
     offenders = top_offenders(N,traces,P_A,P_E)
 
     updated_unconf_pos = []
@@ -514,13 +506,32 @@ def confidence_flip(N,M,majority_key,H_E,Included_matrix,Conf_vector,P_A,start_t
     invalid_count, mis_pos = plot_confidence(Conf_vector,updated_unconf_pos,misses,sigma,1) 
     unconf_pos = updated_unconf_pos.copy()
 
-    
+    Incorrect = False
+    for i in range(N):
+        if not unconf_pos.__contains__(i):
+            if Y[i] != partial_key[i]:
+                Incorrect = True
+
+
+    solutions, found = linear_system_solver(N,Included_matrix,P_A,partial_key,unconf_pos,Y)
     
     #divide_and_parity_check(unconf_pos,traces,majority_key,diff_len,misses,sigma)
     
-    valid_bs = []
+    ##find solution
+    """
+    full_solutions = []
+    if len(solutions) <= 16:
+        for sol in solutions:
+            fsol = partial_key.copy()
+            for i in range(len(unconf_pos)):
+                fsol[unconf_pos[i]] = sol[i]
+        
+            PE = calc_PE_from_key(fsol,traces,M)
+            if (PE == P_A).all():
+                solutions = fsol
+                break """
 
-    return valid_bs, unconf_pos
+    return found, solutions, unconf_pos
 
 
  
@@ -580,6 +591,7 @@ def run_EC_topblock_only(N,QBER,XOR_noise,max_iter):
         return -1
     
 
+##runs error correction algorithm and returns how Eve has perfromed in terms of key recovery
 def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
     X,Y = cascade.gen_sifted_keys(N,QBER)
     Y_ec, Eves_traces = cascade.cascade_EC(X,Y,QBER,max_iter,XOR_noise,1)
@@ -589,30 +601,65 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
         #print("Successfully Corrected Errors!")
         ###Run Attack Here
 
-        majority_key, H_E, Included_matrix, Conf_vector,P_A = recover_secret_majoirty(Eves_traces,N,XOR_noise)
+        Included_matrix, P_A, H_E, Conf_vector, partial_key = gen_system_from_trace(Eves_traces,N)
+
+        
         ####solve system in completely unknown
+        """
         row_ech, b, row_order = my_solver.row_echelon_form(Included_matrix.copy(),P_A.copy())
         partial_solution = my_solver.read_off_basic_variables(row_ech,b) 
         
-        f = 0
+        cor = 0
+        inc = 0
         for i in range(len(partial_solution)):
             if partial_solution[i] != -1:
-               # print("{0} {1}".format(partial_solution[i],Y[i]))   
-                f = f + 1
-        print("{0}% of key discovered".format((f*100)/len(Y)))  
+               # print("{0} {1}".format(partial_solution[i],Y[i]))  
+                if partial_solution[i] == Y[i]: 
+                    cor = cor + 1
+                else:
+                    inc = inc + 1
 
-       
+        print("{0}% of key correctly discovered, {1}% incorrect".format((cor*100)/len(Y), (inc*100)/len(Y)))  
+
+        """
+        partial_solution = np.ones(N)*-1
+        partial_solution, H_E, Included_matrix, Conf_vector,P_A, random_choice_pos = recover_secret_majoirty(N,Eves_traces,XOR_noise,Included_matrix,P_A,H_E,Conf_vector,partial_solution)
+
+        linalg2  = True
+        if linalg2 == False:
+            if len(random_choice_pos) > 0:
+                print("Key contains {0} random choices".format(len(random_choice_pos)))
+                
+                ####ensure that we don't try too large spaces
+                if len(random_choice_pos) <= 8:
+                    diff, min_list = test_random_choices(partial_key,random_choice_pos,Eves_traces)
+                else:
+                    for pos in random_choice_pos:
+                        partial_solution[pos] = random.choice([0,1])
+        
+
+
 
         misses = []
-        conf_key = majority_key.copy()
-        if (majority_key == X).all():
+        conf_key = partial_solution.copy()
+        if (partial_solution == X).all():
             print("Majority, Successful")
+            return True, 1
         else:
             for bit in range(N):
-                if X[bit] != majority_key[bit]:
+                if X[bit] != partial_solution[bit]:
                     misses.append(bit)
-            valid_bs, unconf_pos = confidence_flip(N,len(Eves_traces),majority_key,H_E,Included_matrix,Conf_vector,P_A,0.25,misses,Eves_traces,XOR_noise,Y) ##misses for debugging
+            found, solutions, unconf_pos = confidence_flip(N,len(Eves_traces),partial_solution,H_E,Included_matrix,Conf_vector,P_A,0.25,misses,Eves_traces,XOR_noise,Y) ##misses for debugging
             included_misses = 0
+
+            numsols = len(solutions)
+            if found == True:
+                return True, numsols
+            
+            else:
+                return False, numsols
+
+            """
             for m in misses:
                 if unconf_pos.__contains__(m):
                     included_misses = included_misses + 1
@@ -621,29 +668,9 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
                 return len(valid_bs)
             else:
                 print("Invalid List, length: {0}".format(len(valid_bs)))
-                return 0
-            """
-            if conf_key[0] == -1:
-                print("Full Info, failed")
-                return -1
-
-            else:
-                misses_new = []
-                if (conf_key == X).all():
-                    print("Full Info, Success")
-                else:
-                    for bit in range(N):
-                        if X[bit] != conf_key[bit]:
-                            misses_new.append(bit)
-        
-                    success_count = 0
-                    for i in range(N):
-                        if X[i] == conf_key[i]:
-                            success_count = success_count + 1
-                    success_rate = success_count/N
-                    #print("Eve Success rate: {0}".format(success_rate))
-                # print(final_key)
-                    return success_rate"""
+                return 0"""
+    else:
+        return False, 0
 
     
 
@@ -673,49 +700,85 @@ def plot_params(N,QBER,max_iter, err_range):
 
 
 
+def exp1():
+    err_range = np.arange(0,0.2001,0.01)
+    N = 300
+    max_iter = 3
+    QBER = 0.1
+    avg_iter = 10
+    tb_avg = np.zeros(shape=(21,avg_iter))
+    maj_avg = np.zeros(shape=(21,avg_iter))
+    conf_avg = np.zeros(shape=(21,avg_iter))
 
-err_range = np.arange(0,0.2001,0.01)
-N = 500
-max_iter = 3
-QBER = 0.1
-avg_iter = 10
-tb_avg = np.zeros(shape=(21,avg_iter))
-maj_avg = np.zeros(shape=(21,avg_iter))
-conf_avg = np.zeros(shape=(21,avg_iter))
+    for i in range(avg_iter):
+        tb_only, majority, conf = plot_params(N,QBER,max_iter,err_range)
+        tb_avg[:,i] = np.asarray(tb_only)
+        maj_avg[:,i] = np.asarray(majority)
+        conf_avg[:,i] = np.asarray(conf)
+    majority = np.average(maj_avg,axis=1)
+    tb_only = np.average(tb_avg,axis=1)
+    conf = np.average(conf_avg,axis=1)
 
-for i in range(avg_iter):
-    tb_only, majority, conf = plot_params(N,QBER,max_iter,err_range)
-    tb_avg[:,i] = np.asarray(tb_only)
-    maj_avg[:,i] = np.asarray(majority)
-    conf_avg[:,i] = np.asarray(conf)
-majority = np.average(maj_avg,axis=1)
-tb_only = np.average(tb_avg,axis=1)
-conf = np.average(conf_avg,axis=1)
+    plt.plot(err_range,majority,label="Majority Rule, QBER={0}".format(QBER))
+    plt.plot(err_range,tb_only, label="Top Block Only, QBER={0}".format(QBER))
+    plt.plot(err_range,conf, label="Confidence, QBER={0}".format(QBER))
 
-plt.plot(err_range,majority,label="Majority Rule, QBER={0}".format(QBER))
-plt.plot(err_range,tb_only, label="Top Block Only, QBER={0}".format(QBER))
-plt.plot(err_range,conf, label="Confidence, QBER={0}".format(QBER))
+    QBER = 0.1
+    tb_avg = np.zeros(shape=(21,avg_iter))
+    maj_avg = np.zeros(shape=(21,avg_iter))
+    conf_avg = np.zeros(shape=(21,avg_iter))
 
-QBER = 0.1
-tb_avg = np.zeros(shape=(21,avg_iter))
-maj_avg = np.zeros(shape=(21,avg_iter))
-conf_avg = np.zeros(shape=(21,avg_iter))
+    for i in range(avg_iter):
+        tb_only, majority,conf = plot_params(N,QBER,max_iter,err_range)
+        tb_avg[:,i] = np.asarray(tb_only)
+        maj_avg[:,i] = np.asarray(majority)
+        conf_avg[:,i] = np.asarray(conf)
+    majority = np.average(maj_avg,axis=1)
+    tb_only = np.average(tb_avg,axis=1)
+    conf = np.average(conf_avg,axis=1)
 
-for i in range(avg_iter):
-    tb_only, majority,conf = plot_params(N,QBER,max_iter,err_range)
-    tb_avg[:,i] = np.asarray(tb_only)
-    maj_avg[:,i] = np.asarray(majority)
-    conf_avg[:,i] = np.asarray(conf)
-majority = np.average(maj_avg,axis=1)
-tb_only = np.average(tb_avg,axis=1)
-conf = np.average(conf_avg,axis=1)
+    plt.plot(err_range,majority,label="Majority Rule, QBER={0}".format(QBER))
+    plt.plot(err_range,tb_only, label="Top Block Only, QBER={0}".format(QBER))
+    plt.plot(err_range,conf, label="Confidence, QBER={0}".format(QBER))
 
-plt.plot(err_range,majority,label="Majority Rule, QBER={0}".format(QBER))
-plt.plot(err_range,tb_only, label="Top Block Only, QBER={0}".format(QBER))
-plt.plot(err_range,conf, label="Confidence, QBER={0}".format(QBER))
+    plt.xlabel("Trace Error Rate")
+    plt.ylabel("Key Recovery Success Rate")
+    plt.title("N={0}, Max Iterations={1}".format(N,max_iter))
+    plt.legend()
+    plt.savefig("results/Eve_strat_N_{0}_maxiter_{1}_conf.png".format(N,max_iter))
 
-plt.xlabel("Trace Error Rate")
-plt.ylabel("Key Recovery Success Rate")
-plt.title("N={0}, Max Iterations={1}".format(N,max_iter))
-plt.legend()
-plt.savefig("results/Eve_strat_N_{0}_maxiter_{1}_conf.png".format(N,max_iter))
+
+##this experiment aims to show the percentage of key successfully recovered by the attack for various N and noise
+def exp2():
+    Nrange = [2000,4000]
+    noise_range = np.arange(0,0.121,0.02)
+    repeats = 10
+
+    plt.figure()
+
+    sr = []
+    for N in Nrange:
+        srN = []
+        for sigma in noise_range:
+            SR_AVG = 0
+            for i in range(repeats):
+                found, solnsize = run_EC_confidence_flip(N,0.1,sigma,3)
+                if found == True:
+                    SR_AVG = SR_AVG + 1
+            SR_AVG = SR_AVG/repeats       
+            srN.append(SR_AVG)     
+        sr.append(srN)
+
+    plt.plot(noise_range,sr[0],label="N={0}".format(Nrange[0]))
+    plt.plot(noise_range,sr[1],label="N={0}".format(Nrange[1]))
+    plt.plot(noise_range,sr[2],label="N={0}".format(Nrange[2]))
+    plt.plot(noise_range,sr[3],label="N={0}".format(Nrange[3]))
+
+
+    plt.xlabel("Trace noise")
+    plt.ylabel("Full recovery rate")
+
+    plt.legend()
+    plt.savefig("results/exp2_large.png")
+
+exp2()

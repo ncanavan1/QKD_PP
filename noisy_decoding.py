@@ -7,6 +7,7 @@ import math
 from collections import Counter
 import linalgtools as my_solver
 import cascade_EC as cascade
+import noise_modelling
 
 
 ########################### Eves Tools ########################
@@ -156,6 +157,7 @@ def calc_PE(H_E,N,M):
     return np.reshape(PE,M)
 
 def calc_PE_from_key(key,traces,M):
+    sigma = 0##arbitrary here
     PE = np.zeros([1,M])
     i = 0
     for trace in traces:
@@ -163,7 +165,7 @@ def calc_PE_from_key(key,traces,M):
         block = []
         for p in pos:
             block.append(key[p])
-        parityEve, hw = cascade.parity_check(np.asarray(block))
+        parityEve, pwr_trace = cascade.parity_check(np.asarray(block),sigma)
         PE[0,i] = parityEve
         i = i+1
     return np.reshape(PE,M)
@@ -548,14 +550,14 @@ def recover_secret_basic(traces,N,sigma):
  
 
 
-def run_EC_majority(N,QBER,XOR_noise,max_iter):
+def run_EC_majority(N,QBER,sigma,max_iter):
     X,Y = cascade.gen_sifted_keys(N,QBER)
-    Y_ec, Eves_traces = cascade.cascade_EC(X,Y,QBER,max_iter,XOR_noise,1)
+    Y_ec, Eves_traces = cascade.cascade_EC(X,Y,QBER,max_iter,sigma,1)
     if (X == Y_ec).all():
         print("Successfully Corrected Errors!")
         ###Run Attack Here
 
-        final_key, H_E, Included_matrix, Conf_vector,P_A = recover_secret_majoirty(Eves_traces,N,XOR_noise)
+        final_key, H_E, Included_matrix, Conf_vector,P_A = recover_secret_majoirty(Eves_traces,N,sigma)
         success_count = 0
         for i in range(N):
             if X[i] == final_key[i]:
@@ -570,9 +572,9 @@ def run_EC_majority(N,QBER,XOR_noise,max_iter):
         #print("Unsuccessful Error Correction")
         return -1
 
-def run_EC_topblock_only(N,QBER,XOR_noise,max_iter):
+def run_EC_topblock_only(N,QBER,sigma,max_iter):
     X,Y = cascade.gen_sifted_keys(N,QBER)
-    Y_ec, Eves_traces = cascade.cascade_EC(X,Y,QBER,max_iter,XOR_noise,0)
+    Y_ec, Eves_traces = cascade.cascade_EC(X,Y,QBER,max_iter,sigma,0)
     if (X == Y_ec).all():
         #print("Successfully Corrected Errors!")
         ###Run Attack Here
@@ -592,11 +594,12 @@ def run_EC_topblock_only(N,QBER,XOR_noise,max_iter):
     
 
 ##runs error correction algorithm and returns how Eve has perfromed in terms of key recovery
-def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
+def run_EC_confidence_flip(N,QBER,sigma,max_iter):
     X,Y = cascade.gen_sifted_keys(N,QBER)
-    Y_ec, Eves_traces = cascade.cascade_EC(X,Y,QBER,max_iter,XOR_noise,1)
+    Y_ec, Eves_traces = cascade.cascade_EC(X,Y,QBER,max_iter,sigma,1)
+
     if (X == Y_ec).all():
-        print("\nNoise: {0}".format(XOR_noise))
+        print("\nNoise: {0}".format(sigma))
 
         #print("Successfully Corrected Errors!")
         ###Run Attack Here
@@ -604,8 +607,7 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
         Included_matrix, P_A, H_E, Conf_vector, partial_key = gen_system_from_trace(Eves_traces,N)
 
         
-        ####solve system in completely unknown
-        """
+        ####solve system in completely unknown 
         row_ech, b, row_order = my_solver.row_echelon_form(Included_matrix.copy(),P_A.copy())
         partial_solution = my_solver.read_off_basic_variables(row_ech,b) 
         
@@ -621,9 +623,7 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
 
         print("{0}% of key correctly discovered, {1}% incorrect".format((cor*100)/len(Y), (inc*100)/len(Y)))  
 
-        """
-        partial_solution = np.ones(N)*-1
-        partial_solution, H_E, Included_matrix, Conf_vector,P_A, random_choice_pos = recover_secret_majoirty(N,Eves_traces,XOR_noise,Included_matrix,P_A,H_E,Conf_vector,partial_solution)
+        partial_solution, H_E, Included_matrix, Conf_vector,P_A, random_choice_pos = recover_secret_majoirty(N,Eves_traces,sigma,Included_matrix,P_A,H_E,Conf_vector,partial_solution)
 
         linalg2  = True
         if linalg2 == False:
@@ -649,7 +649,7 @@ def run_EC_confidence_flip(N,QBER,XOR_noise,max_iter):
             for bit in range(N):
                 if X[bit] != partial_solution[bit]:
                     misses.append(bit)
-            found, solutions, unconf_pos = confidence_flip(N,len(Eves_traces),partial_solution,H_E,Included_matrix,Conf_vector,P_A,0.25,misses,Eves_traces,XOR_noise,Y) ##misses for debugging
+            found, solutions, unconf_pos = confidence_flip(N,len(Eves_traces),partial_solution,H_E,Included_matrix,Conf_vector,P_A,0.25,misses,Eves_traces,sigma,Y) ##misses for debugging
             included_misses = 0
 
             numsols = len(solutions)
@@ -750,8 +750,8 @@ def exp1():
 
 ##this experiment aims to show the percentage of key successfully recovered by the attack for various N and noise
 def exp2():
-    Nrange = [2000,4000]
-    noise_range = np.arange(0,0.121,0.02)
+    Nrange = [100,250,500,1000]
+    noise_range = np.arange(0,0.21,0.02)
     repeats = 10
 
     plt.figure()

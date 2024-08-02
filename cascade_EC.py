@@ -1,6 +1,7 @@
 import numpy as np
 import random
 import linalgtools
+import noise_modelling
 
 def gen_sifted_keys(N,QBER):
     xA = np.zeros([N])
@@ -16,16 +17,20 @@ def gen_sifted_keys(N,QBER):
 
 ##calculates parity of block k
 ##outputs parity and also the estimates power trace of a register containing the current sum of the parity check
-def parity_check(k):
-    hw = []
+def parity_check(k,sigma):
     parity = 0
+    pwr_trace = []
+    pwr_thresh = -4.55
     for i in range(k.shape[0]):
+        
+        pwr = noise_modelling.simulate_xor_trace(parity,int(k[i]),sigma)
         parity = parity ^ int(k[i])
-        if parity == 0:
-            hw.append(0)
+        
+        if pwr <= pwr_thresh:
+            pwr_trace.append(0)
         else:
-            hw.append(1)
-    return parity, hw
+            pwr_trace.append(1)
+    return parity, pwr_trace
 
 def shuffle_key(perm):
   #  length = perm.shape[0]
@@ -67,16 +72,16 @@ def split_blocks(N, iter , blocksize_prev, QBER, perm, Y):
 
 
 ##Bob only calls this function
-def top_level_parity_check(blocks):
+def top_level_parity_check(blocks, sigma):
     parities = []
     for block in blocks:
-        parity, hw = parity_check(block) #hw not needed yet. Usefull for attack on bobs side
+        parity, pwr_trace = parity_check(block, sigma) #hw not needed yet. Usefull for attack on bobs side
         parities.append(parity)
     return parities
 
 
 
-def binary_bit_flip(block, bit_positions, X, Y, Eves_traces,XOR_noise,record):
+def binary_bit_flip(block, bit_positions, X, Y, Eves_traces,sigma,record):
     ##split block in two
     new_blocksize = int(np.ceil(block.shape[0]/2))
     block_L = block[0:new_blocksize]
@@ -84,8 +89,8 @@ def binary_bit_flip(block, bit_positions, X, Y, Eves_traces,XOR_noise,record):
     block_R = block[new_blocksize:]
     bit_positions_R = bit_positions[new_blocksize:]
 
-    correct_L_parity, Eves_traces = query_correct_parity(X,bit_positions_L, Eves_traces,XOR_noise,record)
-    current_L_parity, hw = parity_check(block_L)
+    correct_L_parity, Eves_traces = query_correct_parity(X,bit_positions_L, Eves_traces,sigma,record)
+    current_L_parity, pwr_trace = parity_check(block_L, sigma)
 
     #print("{0} : Left sub block.  ---> Map to bits of Y in position: {1}".format(block_L, bit_positions_L))
     #print("{0} : Right sub block. ---> Map to bits of Y in position: {1}".format(block_R, bit_positions_R))
@@ -99,7 +104,7 @@ def binary_bit_flip(block, bit_positions, X, Y, Eves_traces,XOR_noise,record):
 
         else:
            # print("---> binary algorithm on left sub block\n")
-            binary_bit_flip(block_L,bit_positions_L,X,Y,Eves_traces,XOR_noise,record)
+            binary_bit_flip(block_L,bit_positions_L,X,Y,Eves_traces,sigma,record)
     
     else:
         if new_blocksize == 1:
@@ -108,11 +113,11 @@ def binary_bit_flip(block, bit_positions, X, Y, Eves_traces,XOR_noise,record):
             return Y
         else:
          #   print("---> binary algorithm on right sub block\n")
-            binary_bit_flip(block_R,bit_positions_R,X,Y,Eves_traces,XOR_noise,record)
+            binary_bit_flip(block_R,bit_positions_R,X,Y,Eves_traces,sigma,record)
     return Y
 
 
-def cascade_effect(X, key_index_list, key_value_list, corrected_pos, block_list, bit_positions, Eves_traces, Eve_mode, XOR_noise, record):
+def cascade_effect(X, key_index_list, key_value_list, corrected_pos, block_list, bit_positions, Eves_traces, Eve_mode, sigma, record):
     iterations = len(key_index_list)
     key_curr = key_index_list[-1]
     #key_prev = shuffled_key_list[-2]
@@ -124,7 +129,7 @@ def cascade_effect(X, key_index_list, key_value_list, corrected_pos, block_list,
                     block_list[key][i][j] = key_value_list[key][bit_positions[key][i][j]]
 
     Y_old = key_value_list[-2].copy()
-    key_value_list[-2], Eves_traces = error_detect_correct_blocks(X,key_value_list[-2],block_list[-2],bit_positions[-2],Eves_traces,Eve_mode,XOR_noise,record)
+    key_value_list[-2], Eves_traces = error_detect_correct_blocks(X,key_value_list[-2],block_list[-2],bit_positions[-2],Eves_traces,Eve_mode,sigma,record)
 
     ##record what bits have been flipped
     corrected_pos_new = []
@@ -136,11 +141,11 @@ def cascade_effect(X, key_index_list, key_value_list, corrected_pos, block_list,
         return key_value_list[-2], Eves_traces
     
     else:
-        cascade_effect(X, key_index_list[:-1], key_value_list[:-1], corrected_pos[:-1], block_list[:-1], bit_positions[:-1], Eves_traces, Eve_mode, XOR_noise, record)
+        cascade_effect(X, key_index_list[:-1], key_value_list[:-1], corrected_pos[:-1], block_list[:-1], bit_positions[:-1], Eves_traces, Eve_mode, sigma, record)
         return key_value_list[-2], Eves_traces
 
-def error_detect_correct_blocks(X,Y,blocks,bit_positions,Eves_traces,Eve_mode,XOR_noise,record):
-        current_parities = top_level_parity_check(blocks)
+def error_detect_correct_blocks(X,Y,blocks,bit_positions,Eves_traces,Eve_mode,sigma,record):
+        current_parities = top_level_parity_check(blocks, sigma)
         correct_parities = []
         for block_pos in bit_positions:
 
@@ -150,7 +155,7 @@ def error_detect_correct_blocks(X,Y,blocks,bit_positions,Eves_traces,Eve_mode,XO
                 else:
                     record = False
             
-            correct_parity, Eves_traces = query_correct_parity(X,block_pos,Eves_traces,XOR_noise,record)
+            correct_parity, Eves_traces = query_correct_parity(X,block_pos,Eves_traces,sigma,record)
             correct_parities.append(correct_parity)
 
         for i in range(len(current_parities)):
@@ -158,10 +163,10 @@ def error_detect_correct_blocks(X,Y,blocks,bit_positions,Eves_traces,Eve_mode,XO
         
                 if Eve_mode == 0: ##top block trace recording only
                     record = False
-                Y = binary_bit_flip(blocks[i], bit_positions[i], X, Y, Eves_traces,XOR_noise,record)
+                Y = binary_bit_flip(blocks[i], bit_positions[i], X, Y, Eves_traces,sigma,record)
         return Y, Eves_traces
 
-def cascade_EC(X, Y, QBER, max_iter, XOR_noise, Eve_mode):
+def cascade_EC(X, Y, QBER, max_iter, sigma, Eve_mode):
 
     Eves_traces = []
     N = X.shape[0]
@@ -197,7 +202,7 @@ def cascade_EC(X, Y, QBER, max_iter, XOR_noise, Eve_mode):
         Y_old = Y.copy()
 
      
-        Y, Eves_traces = error_detect_correct_blocks(X,Y,blocks,bit_positions,Eves_traces,Eve_mode,XOR_noise,record)
+        Y, Eves_traces = error_detect_correct_blocks(X,Y,blocks,bit_positions,Eves_traces,Eve_mode,sigma,record)
 
         key_value_list.append(Y)
         ##record what bits have been flipped
@@ -208,27 +213,23 @@ def cascade_EC(X, Y, QBER, max_iter, XOR_noise, Eve_mode):
         iteration_correction.append(corrected)
 
         if iter > 0:
-            Y, Eves_traces = cascade_effect(X,permutations_list,key_value_list,iteration_correction, block_list ,iteration_blocks_pos, Eves_traces,Eve_mode, XOR_noise, record)
+            Y, Eves_traces = cascade_effect(X,permutations_list,key_value_list,iteration_correction, block_list ,iteration_blocks_pos, Eves_traces,Eve_mode, sigma, record)
 
         iter = iter + 1
 
     return Y, Eves_traces
 
-def query_correct_parity(X,bit_positions,Eves_traces,XOR_noise,record):
+def query_correct_parity(X,bit_positions,Eves_traces,sigma,record):
 
     ##build bits to be checked into numpy array of correct form
     check_message = []
     for i in bit_positions:
         check_message.append(X[i])
     check_message = np.asarray(check_message)
-    parity, hw = parity_check(check_message)
-    for i in range(len(hw)):
-        ###add noise effect
-        noise_p = np.random.uniform(0,1)
-        if noise_p < XOR_noise:
-            hw[i] = int(hw[i]) ^ 1
+    parity, pwr_trace = parity_check(check_message, sigma)
 
-    trace_entry = [hw, bit_positions, parity]
+
+    trace_entry = [pwr_trace, bit_positions, parity]
     if record == True:
         Eves_traces.append(trace_entry.copy()) 
 

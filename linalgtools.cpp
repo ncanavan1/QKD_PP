@@ -54,30 +54,55 @@ vector< vector<int> > eliminate_below(vector< vector<int> > A, int i, int n, int
 }
 
 
-vector< vector<int> > eliminate_above(vector< vector<int> > A, int i, int n, int m){
+vector< vector<int> > eliminate_above(vector< vector<int> > A, int i, int pivot, int n, int m){
 
     for (int k=0; k < i; k++){
-            for (int j = i; j <m+1; j++){
+        if (A[k][pivot] == 1){
+            for (int j = pivot; j <m+1; j++){
                 A[k][j] = (A[k][j] + A[i][j])%2; 
-            }
+            }    
         }
+    }
     return A;
+}
+
+int find_pivot_col(vector<int> row, int m, int prev_pivot){
+
+    int next_pivot;
+    for (int j = prev_pivot+1; j < m; j++){
+        if (row[j] == 1){
+            next_pivot = j; 
+            break;
+        }
+    }
+    return next_pivot;
 }
 
 vector<int> gauss(vector< vector<int> > A) {
 
     int n = A.size();
     int m = A[0].size()-1;
+    int prev_pivot = -1;
+    int next_pivot;
 
     for (int i=0; i<n; i++) {
         
         A = swap_rows(A,i,n,m);
+        cout << "SWAP" << endl;      
+        print(A);
+
+        next_pivot = find_pivot_col(A[i], m, prev_pivot);
+        cout << "Pivot coloumn: " << next_pivot << endl;
 
         A = eliminate_below(A,i,n,m);
-        print(A);
-        A = eliminate_above(A,i,n,m);
+        cout << "Eliminate below" << endl;
         print(A);
 
+        A = eliminate_above(A,i,next_pivot,n,m);
+        cout << "Eliminate above" << endl;
+        print(A);
+
+        prev_pivot = next_pivot;
     }
 
     

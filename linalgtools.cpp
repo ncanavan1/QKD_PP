@@ -1,129 +1,225 @@
 #include<iostream>
 #include<cmath>
 #include<vector>
+#include <omp.h>
+#include <eigen3/Eigen/Dense>
 
 using namespace std;
+using namespace Eigen;
 
+class mod2system_solver{
 
-void print(vector<vector<int> > A){
-    int n = A.size();
-    int m = A[0].size()-1;
-    for (int i=0; i<n; i++){
-        for(int j=0; j<m+1;j++){
-            cout << A[i][j] << "\t";
-            if (j == m-1){
-                cout << "|";
+    private:
+
+        int n;
+        int m;
+        Matrix<short,Dynamic,Dynamic> A;
+
+        void swap_rows(int i){
+            int maxEl = abs(A(i,i));
+            int maxRow = i;
+            for (int k=i+1; k<n; k++) {
+                if (abs(A(k,i)) > maxEl) {
+                    maxEl = abs(A(k,i));
+                    maxRow = k;
+                }
+            }
+            for (int k=i; k<m+1;k++) {
+                int tmp = A(maxRow,k);
+                A(maxRow,k) = A(i,k);
+                A(i,k) = tmp;
             }
         }
-        cout << "\n";
-    }
-    cout << endl;
-}
-
-vector< vector<int> > swap_rows(vector< vector<int> > A, int i, int n, int m){
-    int maxEl = abs(A[i][i]);
-    int maxRow = i;
-    for (int k=i+1; k<n; k++) {
-        if (abs(A[k][i]) > maxEl) {
-            maxEl = abs(A[k][i]);
-            maxRow = k;
-        }
-    }
-    for (int k=i; k<m+1;k++) {
-        int tmp = A[maxRow][k];
-        A[maxRow][k] = A[i][k];
-        A[i][k] = tmp;
-    }
-    return A;
-}
 
 
-vector< vector<int> > eliminate_below(vector< vector<int> > A, int i, int n, int m){
-    
-    for (int k=i+1; k<n; k++) {
-        int c = A[k][i];
-        for (int j=i; j<m+1; j++) {
-            if (i==j) {
-                A[k][j] = 0;
-            } else {
-                A[k][j] = (A[k][j] + c * A[i][j])%2;
+        void eliminate_below(int i){
+
+            #pragma omp parallel for
+            for (int k=i+1; k<n; k++) {
+                int c = A(k,i);
+                if (c != 0){
+                    for (int j=i; j<m+1; j++) {
+                        if (i==j) {
+                            A(k,j) = 0;
+                        } else {
+                            A(k,j) = (A(k,j) + c * A(i,j))%2;
+                        }
+                    }
+                }
             }
         }
-    }
-    return A;
-}
 
 
-vector< vector<int> > eliminate_above(vector< vector<int> > A, int i, int pivot, int n, int m){
-
-    for (int k=0; k < i; k++){
-        if (A[k][pivot] == 1){
-            for (int j = pivot; j <m+1; j++){
-                A[k][j] = (A[k][j] + A[i][j])%2; 
-            }    
+        void eliminate_above(int i, int pivot){
+            
+            #pragma omp parallel for
+            for (int k=0; k < i; k++){
+                if (A(k,pivot) == 1){
+                    for (int j = pivot; j <m+1; j++){
+                        A(k,j) = (A(k,j) + A(i,j))%2; 
+                    }    
+                }
+            }
         }
-    }
-    return A;
-}
 
-int find_pivot_col(vector<int> row, int m, int prev_pivot){
+        int find_pivot_col(int row, int prev_pivot){
 
-    int next_pivot;
-    for (int j = prev_pivot+1; j < m; j++){
-        if (row[j] == 1){
-            next_pivot = j; 
-            break;
+            int next_pivot = -1;
+            for (int j = prev_pivot+1; j < m; j++){
+                if (A(row,j) == 1){
+                    next_pivot = j; 
+                    break;
+                }
+            }
+            return next_pivot;
         }
-    }
-    return next_pivot;
-}
 
-vector<int> gauss(vector< vector<int> > A) {
 
-    int n = A.size();
-    int m = A[0].size()-1;
-    int prev_pivot = -1;
-    int next_pivot;
+        void cut_empty_rows(){
 
-    for (int i=0; i<n; i++) {
+            int last_nonZero_row = -1;
+            for(int i=n-1; i >= 0; i--){
+                bool isZeroRow = true;
+                for(int j = 0; j < m+1; j++){
+                    if (A(i,j) == 1){
+                        isZeroRow = false;
+                        last_nonZero_row = i;
+                        break;
+                    }
+                }
+                if (isZeroRow == false){
+                    break;
+                }
+            }
+
+            Matrix<short, Dynamic, Dynamic> temp(last_nonZero_row+1,m+1);
+            temp = A(seq(0,last_nonZero_row),seq(0,m));
+            A = temp;
+            n = last_nonZero_row;
+
+            print_matrix();
+            
+        }
+
+
+    public:
+
+
+        mod2system_solver(){
+        }     
+
+        void setSystem(int N, int M, Matrix<short,Dynamic,Dynamic> &a){
+            n = N;
+            m = M;
+            A = a;
+            cout << "System Initialised as: " << endl;
+            print_matrix();
+        }
+
+        void print_matrix(){
+            for (int i=0; i<n; i++){
+                for(int j=0; j<m+1;j++){
+                    cout << A(i,j) << "\t";
+                    if (j == m-1){
+                        cout << "|";
+                    }
+                }
+                cout << "\n";
+            }
+            cout << endl;
+        }   
+
+        void gauss_jordan_elimination() {
+
+            int prev_pivot = -1;
+            int next_pivot;
+            int final_row = -1;
+            
+
+            for (int i=0; i<n; i++) {
+                
+                swap_rows(i);
+                cout << "SWAP" << endl;      
+                print_matrix();
+
+                next_pivot = find_pivot_col(i, prev_pivot);
+                cout << "Pivot coloumn: " << next_pivot << endl;
+
+                //condition is satisfied when a full zero row is encountered
+                if (next_pivot != -1){
+                    eliminate_below(i);
+                    cout << "Eliminate below" << endl;
+                    print_matrix();
+
+                    eliminate_above(i,next_pivot);
+                    cout << "Eliminate above" << endl;
+                    print_matrix();
+                }
+                //the swap condition should ensure that there are only zero rows below
+                else{
+                    final_row = i-1;
+                    break;                    
+                }
+                prev_pivot = next_pivot;
+            }
+
+            Matrix<short, Dynamic, Dynamic> temp(final_row+1,m+1);
+            temp = A(seq(0,final_row),seq(0,m));
+            A = temp;
+            n = final_row + 1;
+            print_matrix();
+
+            cout << "RREF finished" << endl;
+        }
+
+        Matrix<int,Dynamic,Dynamic> find_solutions(){
+            
+        }
         
-        A = swap_rows(A,i,n,m);
-        cout << "SWAP" << endl;      
-        print(A);
-
-        next_pivot = find_pivot_col(A[i], m, prev_pivot);
-        cout << "Pivot coloumn: " << next_pivot << endl;
-
-        A = eliminate_below(A,i,n,m);
-        cout << "Eliminate below" << endl;
-        print(A);
-
-        A = eliminate_above(A,i,next_pivot,n,m);
-        cout << "Eliminate above" << endl;
-        print(A);
-
-        prev_pivot = next_pivot;
-    }
-
-    
-
-    vector<int> x(n);
-    for (int i=n-1; i>=0; i--) {
-        x[i] = (A[i][n]/A[i][i])%2;
-        for (int k=i-1;k>=0; k--) {
-            A[k][n] -= (A[k][i] * x[i])%2;
-        }
-    }
-    return x;
-}
+};
 
 
-int main() {
-    int n = 3;
+
+int main(){
+
+    int n = 11;
     int m = 6;
 
-    vector<int> line(m+1,0); //m is matrix size, m+1 to include row solution
-    vector< vector<int> > A(n,line);
+
+    int lines[11][7] = {
+	{1,1,0,0,0,0,0},
+	{0,0,1,1,0,0,0},
+	{0,0,0,0,1,1,1},
+	{1,0,0,0,0,0,0},
+	{0,0,1,0,0,0,1},
+	{0,0,1,0,0,0,1},
+	{1,0,0,1,1,1,0},
+	{0,1,1,0,0,0,1},
+	{1,1,0,0,0,0,0},
+	{0,0,1,1,0,0,0},
+	{0,0,0,0,1,1,1}};
+
+    Matrix<short,Dynamic,Dynamic> A(n,m+1);
+    
+    for(int i = 0; i < n; i++){
+        for(int j = 0; j < m+1; j++){
+            A(i,j) = lines[i][j];
+        }
+    }
+
+    mod2system_solver lin_system;
+    lin_system.setSystem(n,m,A);
+    lin_system.gauss_jordan_elimination();
+
+}
+
+
+
+int main1() {
+    
+
+    int n = 3;
+    int m = 6;
 
     int lines[3][7] = {
         {1,1,0,1,0,0,1},
@@ -131,47 +227,15 @@ int main() {
         {0,1,1,0,0,1,0}
     };
     
+    Matrix<short,Dynamic,Dynamic> A(n,m+1);
     
-    for (int i = 0; i < n; i++){
-        for (int j = 0; j < m+1; j++){
-            A[i][j] = lines[i][j];
+    for(int i = 0; i < n; i++){
+        for(int j = 0; j < m+1; j++){
+            A(i,j) = lines[i][j];
         }
     }
 
-
-    //Print input
-    print(A);
-    //Calculate solution
-    vector<int> x(n);
-    x = gauss(A);
-    cout << "Result:\t";
-    for (int i=0; i<n; i++) {
-        cout << x[i] << " ";
-    }
-    cout << endl;
-}
-
-int main_manual_inpt() {
-    int n;
-    cin >> n;
-    vector<int> line(n+1,0);
-    vector< vector<int> > A(n,line);
-    for (int i=0; i<n; i++) {
-        for (int j=0; j<n; j++) {
-            cin >> A[i][j];
-            }
-    }
-    for (int i=0; i<n; i++) {
-        cin >> A[i][n];
-    }
-    //Print input
-    print(A);
-    //Calculate solution
-    vector<int> x(n);
-    x = gauss(A);
-    cout << "Result:\t";
-    for (int i=0; i<n; i++) {
-        cout << x[i] << " ";
-    }
-    cout << endl;
+    mod2system_solver lin_system;
+    lin_system.setSystem(n,m,A);
+    lin_system.gauss_jordan_elimination();
 }

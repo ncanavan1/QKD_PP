@@ -8,6 +8,7 @@ from collections import Counter
 import linalgtools as my_solver
 import cascade_EC as cascade
 import noise_modelling
+import LinAlg
 
 
 ########################### Eves Tools ########################
@@ -700,6 +701,7 @@ def plot_params(N,QBER,max_iter, err_range):
 
 
 
+
 def exp1():
     err_range = np.arange(0,0.2001,0.01)
     N = 300
@@ -781,4 +783,4 @@ def exp2():
     plt.legend()
     plt.savefig("results/exp2_large.png")
 
-exp2()
+#exp2()

@@ -5,8 +5,12 @@
 #include<algorithm>
 #include<set>
 #include <eigen3/Eigen/Dense>
-#include <pybind11/pybind11.h>
-#include <pybind11/eigen.h>
+//#include <pybind11/pybind11.h>
+//#include <pybind11/eigen.h>
+#include<chrono>
+#include<fstream>
+#include<sstream>
+
 
 using namespace std;
 using namespace Eigen;
@@ -81,6 +85,7 @@ class mod2system_solver{
         void eliminate_below_positional(int i){
             #pragma omp parallel for
             for(int k=i+1; k < n; k++){
+           //     cout << omp_get_num_threads() << endl;
                 //if first position in rows matches, conduct elimination. Equal to 1 in lower row in pivot col
                 if(pos_arr[i][0] == pos_arr[k][0]){
                     vector<int> tmp;
@@ -113,6 +118,7 @@ class mod2system_solver{
         void eliminate_above_positional(int i){
             #pragma omp parallel for
             for (int k=0; k < i; k++){
+               // cout << omp_get_num_threads() << endl;
                 for (int j = 0; j < pos_arr[k].size(); j++){
                     if (pos_arr[i][0] == pos_arr[k][j]){
                         vector<int> tmp;
@@ -127,6 +133,7 @@ class mod2system_solver{
             
             #pragma omp parallel for
             for (int k=0; k < i; k++){
+                cout << "Num Threads: " << omp_get_num_threads() << "\n" << endl;
                 if (A(k,pivot) == 1){
                     for (int j = pivot; j <m+1; j++){
                         A(k,j) = (A(k,j) + A(i,j))%2; 
@@ -166,20 +173,20 @@ class mod2system_solver{
             for(int j = 0; j < n; j++){
                 if(pos_arr[j].size() == 0){
                     empty_row_index.push_back(j);
-                    cout << j << " empty" << endl;
+            //        cout << j << " empty" << endl;
                 }
             }
 
-            for(int i = 0; i < pos_arr.size(); i++){
+       /*     for(int i = 0; i < pos_arr.size(); i++){
                 cout << i << ":";
                 for(int j = 0; j < pos_arr[i].size(); j++){
                     cout << pos_arr[i][j] << " ";
                 }
                 cout << endl;
-            }
+            } */
             
             for(int k = 0; k < empty_row_index.size(); k++){
-                cout << empty_row_index[k] << endl;
+           //     cout << empty_row_index[k] << endl;
                 pos_arr.erase(pos_arr.begin() + empty_row_index[k] - k);
             }
             n = n - empty_row_index.size();
@@ -230,10 +237,10 @@ class mod2system_solver{
         void setSystem(int N, int M, Matrix<short,Dynamic,Dynamic> a){
             n = N;
             m = M;
-            cout << N << endl;
+         //   cout << N << endl;
             A = a;
 
-            cout << A << endl;
+        //    cout << A << endl;
 //            cout << "System Initialised as: " << endl;
           //  print_matrix();
             convert_to_positional();
@@ -274,22 +281,22 @@ class mod2system_solver{
         void gauss_jordan_elimination_positional(){
 
             for (int i=0; i<n; i++) {
-                cout << "SWAP" << endl;
+                //cout << "SWAP" << endl;
                 swap_rows_positional(i);
-                print_positional();
+               // print_positional();
 
-                cout << "Eliminate Below" << endl;
+               // cout << "Eliminate Below" << endl;
                 eliminate_below_positional(i);
-                print_positional();
+                //print_positional();
 
-                cout << "Eliminate Above" << endl;
+                //cout << "Eliminate Above" << endl;
                 eliminate_above_positional(i);
-                print_positional();
+                //print_positional();
 
 
-                cout << "After pruning empty rows" << endl;
+//                cout << "After pruning empty rows" << endl;
                 prune_empty_rows();
-                print_positional();
+  //              print_positional();
 
 
             }
@@ -306,21 +313,21 @@ class mod2system_solver{
             for (int i=0; i<n; i++) {
                 
                 swap_rows(i);
-                cout << "SWAP" << endl;      
-                print_matrix();
+             //  cout << "SWAP" << endl;      
+               // print_matrix();
 
                 next_pivot = find_pivot_col(i, prev_pivot);
-                cout << "Pivot coloumn: " << next_pivot << endl;
+               // cout << "Pivot coloumn: " << next_pivot << endl;
 
                 //condition is satisfied when a full zero row is encountered
                 if (next_pivot != -1){
                     eliminate_below(i);
-                    cout << "Eliminate below" << endl;
-                    print_matrix();
+                 //   cout << "Eliminate below" << endl;
+                   // print_matrix();
 
                     eliminate_above(i,next_pivot);
-                    cout << "Eliminate above" << endl;
-                    print_matrix();
+                    //cout << "Eliminate above" << endl;
+                //    print_matrix();
                 }
                 //the swap condition should ensure that there are only zero rows below
                 else{
@@ -334,9 +341,9 @@ class mod2system_solver{
             temp = A(seq(0,final_row),seq(0,m));
             A = temp;
             n = final_row + 1;
-            print_matrix();
+          //  print_matrix();
 
-            cout << "RREF finished" << endl;
+           // cout << "RREF finished" << endl;
         }
 
         
@@ -382,7 +389,7 @@ class mod2system_solver{
         }
 };
 
-
+/*
 namespace py = pybind11;
 //constexpr auto byref = py::return_value_policy::reference_internal;
 
@@ -397,9 +404,60 @@ PYBIND11_MODULE(LinAlg, m) {
         .def("gauss_jordan_elimination_positional",&mod2system_solver::gauss_jordan_elimination_positional)
         .def("find_solutions",&mod2system_solver::find_solutions,py::return_value_policy::take_ownership);
     ;
+}*/
+
+vector<vector<int>> read_traces_from_file(string file){
+
+    ifstream f;
+    vector<std::vector<int>> array;    /* vector of vector<int>  */
+
+    f.open (file);   /* open file with filename as argument */
+    if (! f.is_open()) {    /* validate file open for reading */
+        std::cerr << "error: file open failed " << "'.\n";
+    }
+    else{
+        string line, val;                  /* string for line & value */
+
+        while (std::getline (f, line)) {        /* read each line */
+            vector<int> v;                 /* row vector v */
+            stringstream s (line);         /* stringstream line */
+            while (getline (s, val, ','))       /* get each value (',' delimited) */
+                v.push_back (stoi (val));  /* add to row vector */
+            array.push_back (v);                /* add row vector to array */
+        }
+    }
+    return array;
 }
 
+int main () {
 
+    string files[] = {"system128.csv", "system256.csv", "system512.csv", "system1024.csv", "system2048.csv", "system4096.csv"};
+    for(string file: files){
+
+        vector<vector<int>> traces = read_traces_from_file(file);
+        int n = traces.size();
+        int m = traces[0].size()-1;
+        Matrix<short,Dynamic,Dynamic> A(n,m+1);
+        
+        for(int i = 0; i < n; i++){
+            for(int j = 0; j < m+1; j++){
+                A(i,j) = traces[i][j];
+            }
+        }
+
+        mod2system_solver lin_system;
+        lin_system.setSystem(n,m,A);
+        auto start = chrono::high_resolution_clock::now();
+        lin_system.gauss_jordan_elimination();
+        auto stop = chrono::high_resolution_clock::now();
+        auto duration = chrono::duration_cast<chrono::milliseconds>(stop-start);
+        cout << duration.count() << endl;
+        //Matrix<short,Dynamic,Dynamic> solutions;
+        //lin_system.find_solutions(solutions);
+        //cout << solutions << endl;
+    }
+    return 0;
+}
 
 /*
 int main1(){

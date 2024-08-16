@@ -311,7 +311,7 @@ def recount_votes(N,groups_list,valid_bs,occourances,majority_key,traces,diff_le
                             votes[g] = votes[g] - (np.abs(diff_len - new_diff)/occourances[int(g)])
     return votes, valid_bs
 
-def divide_and_parity_check(unconf_pos,traces,majority_key,diff_len,misses,sigma,):
+def divide_and_parity_check(N,unconf_pos,traces,majority_key,diff_len,misses,sigma,):
     valid_bs = []
     if invalid_count == 0:
         max_unconf = 10

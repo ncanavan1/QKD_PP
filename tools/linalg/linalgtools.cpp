@@ -22,19 +22,19 @@ class mod2system_solver{
         int n;
         int m;
         Matrix<short,Dynamic,Dynamic> A;
-        vector< vector< int>> pos_arr;
+        Matrix<int,Dynamic,Dynamic> pos_arr;
 
 
         void swap_rows_positional(int i){
-            int minPos = pos_arr[i][0];
+            int minPos = pos_arr(i,0);
             int minRow = i;
             for(int k=i; k<n; k++){
-                if (pos_arr[k][0] < minPos){
-                    minPos = pos_arr[k][0];
+                if (pos_arr(k,0) < minPos){
+                    minPos = pos_arr(k,0);
                     minRow = k;
                 }
             }
-            pos_arr[i].swap(pos_arr[minRow]);       
+            pos_arr.row(i).swap(pos_arr.row(minRow));   
         }
 
         void swap_rows(int i){
@@ -53,12 +53,12 @@ class mod2system_solver{
             }
         }
 
-        vector<int> find_difference(vector<int> v1, vector<int> v2){
+        vector<int> find_difference(Matrix<int,1,Dynamic> v1, Matrix<int,1,Dynamic> v2){
             vector<int> difference;
             for(int i =0; i < v1.size(); i++){
                 bool match_v1 = false;
                 for(int j = 0; j < v2.size(); j++){
-                    if(v1[i] == v2[j]){
+                    if(v1(i) == v2(j)){
                         match_v1 = true;
                     }
                 }
@@ -70,7 +70,7 @@ class mod2system_solver{
             for(int j =0; j < v2.size(); j++){
                 bool match_v2 = false;
                 for(int i = 0; i < v1.size(); i++){
-                    if(v1[i] == v2[j]){
+                    if(v1(i) == v2(j)){
                         match_v2 = true;
                     }
                 }
@@ -87,11 +87,18 @@ class mod2system_solver{
             for(int k=i+1; k < n; k++){
            //     cout << omp_get_num_threads() << endl;
                 //if first position in rows matches, conduct elimination. Equal to 1 in lower row in pivot col
-                if(pos_arr[i][0] == pos_arr[k][0]){
+                if(pos_arr(i,0) == pos_arr(k,0)){
                     vector<int> tmp;
                     //finding the difference is eqivalent to operating an XOR on the explicit rows
-                    tmp = find_difference(pos_arr[i],pos_arr[k]);
-                    pos_arr[k] = tmp;
+                    tmp = find_difference(pos_arr.row(i),pos_arr.row(k));
+                    for(int j = 0; j < pos_arr.row(i).size(); j++){
+                        if (j < tmp.size()){
+                            pos_arr(i,j) = tmp[j];
+                        }
+                        else{
+                            pos_arr(i,j) = -1;
+                        }
+                    }
                 }
             }
         }
@@ -119,11 +126,18 @@ class mod2system_solver{
             #pragma omp parallel for
             for (int k=0; k < i; k++){
                // cout << omp_get_num_threads() << endl;
-                for (int j = 0; j < pos_arr[k].size(); j++){
-                    if (pos_arr[i][0] == pos_arr[k][j]){
+                for (int j = 0; j < pos_arr.row(k).size(); j++){
+                    if (pos_arr(i,0) == pos_arr(k,j)){
                         vector<int> tmp;
-                        tmp = find_difference(pos_arr[i],pos_arr[k]);
-                        pos_arr[k] = tmp;
+                        tmp = find_difference(pos_arr.row(i),pos_arr.row(k));
+                        for(int j = 0; j < pos_arr.row(i).size(); j++){
+                            if (j < tmp.size()){
+                                pos_arr(i,j) = tmp[j];
+                            }
+                            else{
+                                pos_arr(i,j) = -1;
+                            }
+                        }
                     }
                 }
             }
@@ -133,7 +147,7 @@ class mod2system_solver{
             
             #pragma omp parallel for
             for (int k=0; k < i; k++){
-                cout << "Num Threads: " << omp_get_num_threads() << "\n" << endl;
+               // cout << "Num Threads: " << omp_get_num_threads() << "\n" << endl;
                 if (A(k,pivot) == 1){
                     for (int j = pivot; j <m+1; j++){
                         A(k,j) = (A(k,j) + A(i,j))%2; 
@@ -156,42 +170,38 @@ class mod2system_solver{
         }
 
         void convert_to_positional(){
+            pos_arr.resize(n,m+1);
+            Matrix<int,1,Dynamic> new_row(1,m);
             for(int i = 0; i < n; i++){
-                vector<int> row;
+                int count = 0;
                 for(int j=0; j< m+1; j++){
                     if (A(i,j) == 1){
-                        row.push_back(j);
+                        new_row(i,count) = j;
+                        count++;
                     }
                 }
-                pos_arr.push_back(row);
+                new_row.resize(1,count);
+                pos_arr.row(i).resize(count);
+                pos_arr.row(i) = new_row.row(0);
             }
         }
 
-        void prune_empty_rows(){
-                //remove empty rows
+      /*  void prune_empty_rows(){
+            //remove empty rows
             vector<int> empty_row_index;
             for(int j = 0; j < n; j++){
-                if(pos_arr[j].size() == 0){
+                if(pos_arr.row(j).size() == 0){
                     empty_row_index.push_back(j);
-            //        cout << j << " empty" << endl;
                 }
             }
 
-       /*     for(int i = 0; i < pos_arr.size(); i++){
-                cout << i << ":";
-                for(int j = 0; j < pos_arr[i].size(); j++){
-                    cout << pos_arr[i][j] << " ";
-                }
-                cout << endl;
-            } */
             
             for(int k = 0; k < empty_row_index.size(); k++){
-           //     cout << empty_row_index[k] << endl;
                 pos_arr.erase(pos_arr.begin() + empty_row_index[k] - k);
             }
             n = n - empty_row_index.size();
         }
-
+*/
         vector<vector <int>> binary_combinations(int k){
 
             vector<vector<int> > combinations;
@@ -246,10 +256,10 @@ class mod2system_solver{
             convert_to_positional();
         }
 
-        void print_positional(){
+   /*     void print_positional(){
             for(int i=0; i<n; i++){
                 for(int j=0;j<m+1;j++){
-                    if (count(pos_arr[i].begin(), pos_arr[i].end(),j) == 1){
+                    if (count(pos_arr.row(i).begin(), pos_arr.row(i).end(),j) == 1){
                         cout << "1" << "\t";
                     }
                     else{
@@ -263,7 +273,7 @@ class mod2system_solver{
             }
             cout << endl;
         }
-
+*/
         void print_matrix(){
             for (int i=0; i<n; i++){
                 for(int j=0; j<m+1;j++){
@@ -279,7 +289,7 @@ class mod2system_solver{
 
 
         void gauss_jordan_elimination_positional(){
-
+            
             for (int i=0; i<n; i++) {
                 //cout << "SWAP" << endl;
                 swap_rows_positional(i);
@@ -295,7 +305,7 @@ class mod2system_solver{
 
 
 //                cout << "After pruning empty rows" << endl;
-                prune_empty_rows();
+               // prune_empty_rows();
   //              print_positional();
 
 
@@ -304,6 +314,12 @@ class mod2system_solver{
 
 
         void gauss_jordan_elimination() {
+            
+            int swaptime;
+            int eliminate_below_time;
+            int eliminate_above_time;
+            int prune_time;
+
 
             int prev_pivot = -1;
             int next_pivot;
@@ -348,7 +364,7 @@ class mod2system_solver{
 
         
 
-        Matrix<short,Dynamic,Dynamic> find_solutions(){
+      /*  Matrix<short,Dynamic,Dynamic> find_solutions(){
             
             //find free variables, number k
             //create solution space of 2^k x m
@@ -386,7 +402,7 @@ class mod2system_solver{
                 }
             }
             return solutions;
-        }
+        } */
 };
 
 /*

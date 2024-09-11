@@ -8,7 +8,7 @@ from collections import Counter
 import linalgtools as my_solver
 import cascade_EC as cascade
 import noise_modelling
-import LinAlg
+#import LinAlg
 
 
 ########################### Eves Tools ########################
@@ -752,8 +752,8 @@ def exp1():
 
 ##this experiment aims to show the percentage of key successfully recovered by the attack for various N and noise
 def exp2():
-    Nrange = [100,250,500,1000]
-    noise_range = np.arange(0,0.21,0.02)
+    Nrange = [100,250]#,500,1000]
+    noise_range = np.arange(0,0.51,0.02)
     repeats = 10
 
     plt.figure()
@@ -773,14 +773,15 @@ def exp2():
 
     plt.plot(noise_range,sr[0],label="N={0}".format(Nrange[0]))
     plt.plot(noise_range,sr[1],label="N={0}".format(Nrange[1]))
-    plt.plot(noise_range,sr[2],label="N={0}".format(Nrange[2]))
-    plt.plot(noise_range,sr[3],label="N={0}".format(Nrange[3]))
+    #plt.plot(noise_range,sr[2],label="N={0}".format(Nrange[2]))
+    #plt.plot(noise_range,sr[3],label="N={0}".format(Nrange[3]))
 
 
     plt.xlabel("Trace noise")
     plt.ylabel("Full recovery rate")
 
     plt.legend()
-    plt.savefig("results/exp2_large.png")
+    plt.title("Effect of noise on attack with \n STM32-F405RGT6 (ARM Cortex-M4)")
+    plt.savefig("results/exp2_large_stm32.png",bbox_inches = "tight")
 
-#exp2()
+exp2()

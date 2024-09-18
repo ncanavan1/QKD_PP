@@ -20,17 +20,19 @@ def gen_sifted_keys(N,QBER):
 def parity_check(k,sigma):
     parity = 0
     pwr_trace = []
-    pwr_thresh = -4.55 ##for stm32
+    #pwr_thresh = 0#-4.55 ##for stm32
     #pwr_thresh = 0.5
     for i in range(k.shape[0]):
         
-        pwr = noise_modelling.simulate_xor_trace_stm32_kim(parity,int(k[i]),sigma)
+        pwr = noise_modelling.simulate_xor_trace_general(parity,int(k[i]),sigma)
+        pwr_trace.append(pwr)
         parity = parity ^ int(k[i])
         
-        if pwr <= pwr_thresh + sigma*0.8:
-            pwr_trace.append(0)
-        else:
-            pwr_trace.append(1)
+        #if pwr <= pwr_thresh + sigma*0.8:
+        #    pwr_trace.append(0)
+        #else:
+         #   pwr_trace.append(1)
+        
     return parity, pwr_trace
 
 def shuffle_key(perm):

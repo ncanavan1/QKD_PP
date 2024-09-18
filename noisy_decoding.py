@@ -31,15 +31,14 @@ def top_offenders(N,traces,P_A,P_E):
 def gen_system_from_trace(traces,N):
 
     M = len(traces)
-    H_E = np.zeros([M,N]) ##Hamming weight matrix
     P_A = np.zeros(M)
     Included_matrix = np.zeros([M,N]) ##linear system matrix
     Conf_vector = np.zeros(N)
-    partial_key = np.zeros(N)
+    partial_key = np.ones(N)*-1
 
     check = 0
     for trace in traces:
-        inter_parity = trace[0]
+        #inter_parity = trace[0]
         pos = trace[1]
         out_parity = trace[2]
         P_A[check] = out_parity
@@ -47,20 +46,14 @@ def gen_system_from_trace(traces,N):
             Conf_vector[pos[0]] = 1
             partial_key[pos[0]] = out_parity
         for i in reversed(range(0,pos.size)): 
-            H_E[check,pos[i]] = inter_parity[i] ^ inter_parity[i-1]
             Included_matrix[check,pos[i]] = 1
-        H_E[check,pos[0]] = inter_parity[0]
         check = check + 1
-    return Included_matrix, P_A, H_E, Conf_vector, partial_key
+    return Included_matrix, P_A, Conf_vector, partial_key
 
-def recover_secret_majoirty(N, traces, sigma, Included_matrix, P_A, H_E, Conf_vector, partial_key):
+def recover_secret_majoirty(N, traces, sigma, Included_matrix, P_A, Conf_vector, partial_key):
      
     M = Included_matrix.shape[0]
-    alpha = 0.4 ##emperic
-    beta = 2.5
-
     random_choice_pos = []
-
 
     for i in range(N):
 
@@ -68,33 +61,11 @@ def recover_secret_majoirty(N, traces, sigma, Included_matrix, P_A, H_E, Conf_ve
         if partial_key[i] != -1:
             Conf_vector[i] = 1
 
-        if Conf_vector[i] != 1:
-            ones = 0
-            zeros = 0
-            for check in range(M):
-                if Included_matrix[check,i] == 1:
-                    if H_E[check,i] == 0:
-                        zeros = zeros + 1
-                    else:
-                        ones = ones + 1
-            tot = ones+zeros
-            if ones > zeros:
-                partial_key[i] = 1
-                Conf_vector[i] = (1-sigma)**(ones/(ones+zeros)) * (sigma)**(zeros/(ones+zeros))
-
-            elif zeros > ones:
-                partial_key[i] = 0
-                Conf_vector[i] = (1-sigma)**(zeros/(ones+zeros)) * (sigma)**(ones/(ones+zeros))
+        #if Conf_vector[i] != 1:
+            ##build the list S of power samples for on bit X
 
 
-            ###Keep as unknown as run re run linear solver to determine
-            else: #ones==zeros
-                partial_key[i] = -1
-                random_choice_pos.append(i)
-                Conf_vector[i] = 0
-
-
-    return partial_key, H_E, Included_matrix, Conf_vector, P_A, random_choice_pos
+    return partial_key, Included_matrix, Conf_vector, P_A, random_choice_pos
 
 
 
@@ -605,7 +576,7 @@ def run_EC_confidence_flip(N,QBER,sigma,max_iter):
         #print("Successfully Corrected Errors!")
         ###Run Attack Here
 
-        Included_matrix, P_A, H_E, Conf_vector, partial_key = gen_system_from_trace(Eves_traces,N)
+        Included_matrix, P_A, Conf_vector, partial_key = gen_system_from_trace(Eves_traces,N)
 
         
         ####solve system in completely unknown 
@@ -624,7 +595,7 @@ def run_EC_confidence_flip(N,QBER,sigma,max_iter):
 
         print("{0}% of key correctly discovered, {1}% incorrect".format((cor*100)/len(Y), (inc*100)/len(Y)))  
 
-        partial_solution, H_E, Included_matrix, Conf_vector,P_A, random_choice_pos = recover_secret_majoirty(N,Eves_traces,sigma,Included_matrix,P_A,H_E,Conf_vector,partial_solution)
+        partial_solution, Included_matrix, Conf_vector,P_A, random_choice_pos = recover_secret_majoirty(N,Eves_traces,sigma,Included_matrix,P_A,Conf_vector,partial_solution)
 
         linalg2  = True
         if linalg2 == False:
@@ -753,7 +724,7 @@ def exp1():
 ##this experiment aims to show the percentage of key successfully recovered by the attack for various N and noise
 def exp2():
     Nrange = [100,250]#,500,1000]
-    noise_range = np.arange(0,0.51,0.02)
+    noise_range = np.arange(0.1,0.51,0.02)
     repeats = 10
 
     plt.figure()

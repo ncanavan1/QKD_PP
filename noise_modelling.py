@@ -25,12 +25,12 @@ def simulate_xor_trace_general(A, B, noise_std):
     hw = bin(xor_result).count('1')
 
     alpha = 1
-    beta = -0
+    beta = 0
     
     # Base power consumption with Gaussian noise
     base_power = alpha*hw + beta
-    noise = np.abs(np.random.normal(0, noise_std))
-    
+    #noise = np.abs(np.random.normal(0, noise_std))
+    noise = np.random.normal(0,noise_std)
     # Simulated power trace value
     simulated_power = base_power + noise
     
@@ -96,8 +96,10 @@ def calc_cdfs(x,a_base,b_base,sigma):
     return cdf_a, cdf_b
 
 
-
-def prob_y_x_unknown(y,sigma,cdf_a,cdf_b,power_resolution): #p(power=y)
+##retrurns:- base prob of power =y
+## - prob of power = y given x=a
+## - prob of power = y given x=b
+def probs_given_y(x,y,cdf_a,cdf_b,power_resolution): #p(power=y)
     ##setting power resolution to integral limits
 
     y_below = round(y,power_resolution)
@@ -107,39 +109,136 @@ def prob_y_x_unknown(y,sigma,cdf_a,cdf_b,power_resolution): #p(power=y)
 
     p_a = cdf_a[y_above_pos] - cdf_a[y_below_pos]
     p_b = cdf_b[y_above_pos] - cdf_b[y_below_pos]
-    p_unkown = 0.5*(p_a+p_b)
-    print(p_a) 
-    print(p_b) 
-    print(p_unkown) 
+    cdf_u = 0.5*(cdf_a + cdf_b)
+    #p_unkown = 0.5*(p_a+p_b)
+    p_u = cdf_u[y_above_pos] - cdf_u[y_below_pos]
+    #pr_y_given_a = (p_a * 0.5)/p_unkown
 
-    pr_x_given_y = (p_b * 0.5)/p_unkown
-    print(pr_x_given_y)    
-    
+    """
     plt.xlabel("Power")
     plt.ylabel("CDF")
     plt.plot(x,cdf_a,label="x=a")
     plt.plot(x,cdf_b,label="x=b")
+
+    x_cord = 0
+    y_pos = np.where(x == x_cord)[0][0]
+    y_cord = cdf_a[y_pos]
+
+    x_highlighting = [-3,x_cord, x_cord]
+    y_highlighting = [y_cord, y_cord, 0]
+    plt.plot(x_highlighting, y_highlighting, "k--")
+
+    x_cord = 0.2
+    y_pos = np.where(x == x_cord)[0][0]
+    y_cord = cdf_a[y_pos]
+
+    x_highlighting = [-3,x_cord, x_cord]
+    y_highlighting = [y_cord, y_cord, 0]
+    plt.plot(x_highlighting, y_highlighting, "k--")
+
+
+    x_cord = 0
+    y_pos = np.where(x == x_cord)[0][0]
+    y_cord = cdf_b[y_pos]
+
+    x_highlighting = [-3,x_cord, x_cord]
+    y_highlighting = [y_cord, y_cord, 0]
+    plt.plot(x_highlighting, y_highlighting, "k--")
+
+    x_cord = 0.2
+    y_pos = np.where(x == x_cord)[0][0]
+    y_cord = cdf_b[y_pos]
+
+    x_highlighting = [-3,x_cord, x_cord]
+    y_highlighting = [y_cord, y_cord, 0]
+    plt.plot(x_highlighting, y_highlighting, "k--")
+
     plt.legend()
     plt.grid(True)
-  #  plt.show()
+    plt.show()
+"""
+    return p_u, p_a, p_b
+
+def plot_prob_x_range(x,cdf_a,cdf_b,power_resolution):
+    p_as = []
+    p_bs = []
+    p_unkowns = []
+
+    for y in x[:-1]:
+        pu, pa, pb = probs_given_y(x,y,cdf_a,cdf_b,power_resolution)
+        p_as.append((pa*0.5)/pu)
+        p_bs.append((pb*0.5)/pu)
+        p_unkowns.append(pu)
+    plt.plot(x[:-1],p_as)
+    plt.plot(x[:-1],p_bs)
+
+    plt.show() 
 
 
-##set y to at least one magnitude higher resolution than power resolution
-start_power = -3
-end_power = 3
-power_resolution = 2
-a_base = -0.5
-b_base = 0.5
+def prob_given_S(S,x,cdf_a,cdf_b,power_resolution):
 
-sigma = 0.5
-y = 0.7
+    Scount = len(S)
+    p_us = []
+    p_as = []
+    p_bs = []
 
-x = np.arange(start_power,end_power,10**(-power_resolution))
-x = np.round(x,decimals=power_resolution)
-cdf_a, cdf_b = calc_cdfs(x,a_base,b_base,sigma)
+    for i in range(Scount):
+        p_u, p_a, p_b = probs_given_y(x,S[i],cdf_a,cdf_b,power_resolution)
+        p_us.append(p_u)
+        p_as.append(p_a)
+        p_bs.append(p_b)
+
+    p_y_given_a = 1
+    p_y_given_b = 1
+   # for i in range(Scount):
+    #    p_y_given_a = p_y_given_a*(p_as[i])/(p_as[i] + p_bs[i])
+     #   p_y_given_b = p_y_given_b*(p_bs[i])/(p_as[i] + p_bs[i])
 
 
+    p_s_given_a = np.prod(np.asarray(p_as))
+    p_s_given_b = np.prod(np.asarray(p_bs))
+   # p_s_unknown = np.prod(np.asarray(p_us))
 
-prob_y_x_unknown(y,sigma,cdf_a,cdf_b,power_resolution)
-#run_noise_model()
-    
+    p_y_given_a = p_s_given_a/(p_s_given_a+p_s_given_b)
+    p_y_given_b = p_s_given_b/(p_s_given_a+p_s_given_b)
+
+
+   # for i in range(Scount):
+    #    p_y_given_a = p_y_given_a*(p_as[i]/p_us[i])*(0.5)
+     #   p_y_given_b = p_y_given_b*(p_bs[i]/p_us[i])*(0.5)
+
+    #plt.show()
+   # print(p_y_given_a)
+   # print(p_y_given_b)
+   # print(p_y_given_a+p_y_given_b)
+   # plt.hist(S)
+   # plt.show()
+    return p_y_given_a, p_y_given_b
+
+
+def runner():
+
+    ##set y to at least one magnitude higher resolution than power resolution
+    start_power = -3
+    end_power = 4
+    power_resolution = 3
+    a_base = 0
+    b_base = 1
+
+    sigma = 0.5
+
+    x = np.arange(start_power,end_power,10**(-power_resolution))
+    x = np.round(x,decimals=power_resolution)
+    cdf_a, cdf_b = calc_cdfs(x,a_base,b_base,sigma)
+
+
+    S = []
+    A,B = 0, 0
+    for i in range(4):
+        sim_power = simulate_xor_trace_general(A,B,sigma)
+        S.append(sim_power)
+
+    prob_given_S(S,x,cdf_a,cdf_b,power_resolution)
+    #p_any, p_a, p_b = probs_given_y(x,y,cdf_a,cdf_b,power_resolution)
+    #plot_prob_x_range(x,cdf_a,cdf_b,power_resolution)
+    #run_noise_model()

@@ -113,50 +113,39 @@ def probs_given_y(x,y,cdf_a,cdf_b,power_resolution): #p(power=y)
     #p_unkown = 0.5*(p_a+p_b)
     p_u = cdf_u[y_above_pos] - cdf_u[y_below_pos]
     #pr_y_given_a = (p_a * 0.5)/p_unkown
-
     """
+    plt.style.use("seaborn-v0_8-darkgrid")
+
     plt.xlabel("Power")
     plt.ylabel("CDF")
-    plt.plot(x,cdf_a,label="x=a")
-    plt.plot(x,cdf_b,label="x=b")
-
-    x_cord = 0
-    y_pos = np.where(x == x_cord)[0][0]
-    y_cord = cdf_a[y_pos]
-
-    x_highlighting = [-3,x_cord, x_cord]
-    y_highlighting = [y_cord, y_cord, 0]
-    plt.plot(x_highlighting, y_highlighting, "k--")
-
-    x_cord = 0.2
-    y_pos = np.where(x == x_cord)[0][0]
-    y_cord = cdf_a[y_pos]
-
-    x_highlighting = [-3,x_cord, x_cord]
-    y_highlighting = [y_cord, y_cord, 0]
-    plt.plot(x_highlighting, y_highlighting, "k--")
+    plt.plot(x,cdf_a,label=(r'XOR$\rightarrow$ a'))
+    plt.plot(x,cdf_b,label=(r'XOR$\rightarrow$ b'))
 
 
-    x_cord = 0
-    y_pos = np.where(x == x_cord)[0][0]
-    y_cord = cdf_b[y_pos]
+    x_cord = [0,0.3]
+    y_cord_a = []
+    y_cord_b = []
+    y_pos = np.where(x == x_cord[0])[0][0]
+    y_cord_a.append(cdf_a[y_pos])
+    y_cord_b.append(cdf_b[y_pos])
+    y_pos = np.where(x == x_cord[1])[0][0]
+    y_cord_a.append(cdf_a[y_pos])
+    y_cord_b.append(cdf_b[y_pos])
 
-    x_highlighting = [-3,x_cord, x_cord]
-    y_highlighting = [y_cord, y_cord, 0]
-    plt.plot(x_highlighting, y_highlighting, "k--")
 
-    x_cord = 0.2
-    y_pos = np.where(x == x_cord)[0][0]
-    y_cord = cdf_b[y_pos]
+    plt.axvline(x_cord[0],color="k",linestyle="--",ymax=y_cord_a[0])
+    plt.axvline(x_cord[1],color="k",linestyle="--",ymax=y_cord_a[1])
+    plt.axhline(y_cord_a[0],color="k",linestyle="--",xmax=3/7)
+    plt.axhline(y_cord_a[1],color="k",linestyle="--",xmax=3.3/7)
+    plt.axhline(y_cord_b[0],color="k",linestyle="--",xmax=3/7)
+    plt.axhline(y_cord_b[1],color="k",linestyle="--",xmax=3.3/7)
 
-    x_highlighting = [-3,x_cord, x_cord]
-    y_highlighting = [y_cord, y_cord, 0]
-    plt.plot(x_highlighting, y_highlighting, "k--")
-
+    plt.text(0.19,-0.1,r'$\Delta_{pwr}$')
     plt.legend()
-    plt.grid(True)
+    plt.savefig("results/cdf.png")
     plt.show()
-"""
+    """
+
     return p_u, p_a, p_b
 
 def plot_prob_x_range(x,cdf_a,cdf_b,power_resolution):
@@ -242,3 +231,4 @@ def runner():
     #p_any, p_a, p_b = probs_given_y(x,y,cdf_a,cdf_b,power_resolution)
     #plot_prob_x_range(x,cdf_a,cdf_b,power_resolution)
     #run_noise_model()
+#runner()

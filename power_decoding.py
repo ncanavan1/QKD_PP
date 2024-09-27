@@ -6,8 +6,9 @@ from decimal import Decimal
 import math
 from collections import Counter
 import linalgtools as my_solver
-import cascade_EC as cascade
+from cascade.run_EC import run_reconciliation
 import noise_modelling
+import csv
 #import LinAlg
 
 
@@ -19,7 +20,6 @@ def gen_system_from_trace(traces,N):
     M = len(traces)
     P_A = np.zeros(M)
     Included_matrix = np.zeros([M,N]) ##linear system matrix
-    Conf_vector = np.zeros(N)
     partial_key = np.ones(N)*-1
 
     check = 0
@@ -29,12 +29,11 @@ def gen_system_from_trace(traces,N):
         out_parity = trace[2]
         P_A[check] = out_parity
         if pos.size == 1:
-            Conf_vector[pos[0]] = 1
             partial_key[pos[0]] = out_parity
         for i in reversed(range(0,pos.size)): 
             Included_matrix[check,pos[i]] = 1
         check = check + 1
-    return Included_matrix, P_A, Conf_vector, partial_key
+    return Included_matrix, P_A, partial_key
 
 
 def Eve_parity_checks(traces,eve_key):
@@ -126,6 +125,7 @@ def calculate_intermediate_parities(Traces, partial_solution):
         parity_list.append(parities)
     
     ##calculate from end using known output parity
+    
     current = 0
     for trace in Traces:
         bit_pos = trace[1]
@@ -299,24 +299,34 @@ def linear_system_resolve(N,Included_matrix,P_A,partial_solution,Y):
         
 
 ##runs error correction algorithm and returns how Eve has perfromed in terms of key recovery
-def run_EC_power_flip(N,QBER,sigma,max_iter):
-    X,Y = cascade.gen_sifted_keys(N,QBER)
-    Y_ec, Eves_traces = cascade.cascade_EC(X,Y,QBER,max_iter,sigma,1)
+def run_EC_power_flip(N,QBER,sigma,max_iter,cascade_params,initial_only=False):
+    #X,Y = cascade.gen_sifted_keys(N,QBER)
+    #Y_ec, Eves_traces = cascade.cascade_EC(X,Y,QBER,max_iter,sigma,1)
 
-    if (X == Y_ec).all():
+    algo = cascade_params[0]
+    error_type = cascade_params[1]
+    Y, X, Y_ec, Eves_traces, remaining_errors = run_reconciliation(algo,N,error_type,QBER,sigma)
+    X = np.asarray([*X._bits.values()])
+    Y = np.asarray([*Y._bits.values()])
+    Y_ec = np.asarray([*Y_ec._bits.values()])
+
+    if remaining_errors == 0:
         print("\nN:  {0}, QBER: {1}, Noise: {2}".format(N,QBER,sigma))
 
         #print("Successfully Corrected Errors!")
         ###Run Attack Here
 
-        Included_matrix, P_A, Conf_vector, partial_key = gen_system_from_trace(Eves_traces,N)
+        Included_matrix, P_A, partial_solution = gen_system_from_trace(Eves_traces,N)
 
-        
-        ####solve system in completely unknown 
-        row_ech, b, row_order = my_solver.row_echelon_form(Included_matrix.copy(),P_A.copy())
-        partial_solution = my_solver.read_off_basic_variables(row_ech,b) 
-        
         initial_cor, initial_inc = check_solution(partial_solution,Y)
+
+        ####solve system in completely unknown 
+        #row_ech, b, row_order = my_solver.row_echelon_form(Included_matrix.copy(),P_A.copy())
+        #partial_solution = my_solver.read_off_basic_variables(row_ech,b) 
+        
+        partial_solution = linear_system_resolve(N,Included_matrix,P_A,partial_solution,Y)
+
+        cor, inc = check_solution(partial_solution,Y)
 
         remaining_start = (partial_solution == -1).sum()
         finished = False
@@ -324,59 +334,59 @@ def run_EC_power_flip(N,QBER,sigma,max_iter):
         confidence_thresh = 0.95
         sample_min = 2
 
+        if initial_only == False:
+            while finished == False:
+                remaining_start = (partial_solution == -1).sum()
+                parity_list = calculate_intermediate_parities(Eves_traces,partial_solution)
+                power_samples = sort_power_samples(Eves_traces,parity_list,partial_solution,Y)
 
-        while finished == False:
-            remaining_start = (partial_solution == -1).sum()
-            parity_list = calculate_intermediate_parities(Eves_traces,partial_solution)
-            power_samples = sort_power_samples(Eves_traces,parity_list,partial_solution,Y)
 
+                start_power = -3
+                end_power = 4
+                power_resolution = 3
+                a_base = 0
+                b_base = 1
+                mid = 0.5
+                confidence_ratings = np.zeros(N)
 
-            start_power = -3
-            end_power = 4
-            power_resolution = 3
-            a_base = 0
-            b_base = 1
-            mid = 0.5
-            confidence_ratings = np.zeros(N)
+                s_curr = power_samples[0,0]
+                s_curr_start = 0
+                s_curr_end = 0
+                pos = 0
+                for s in power_samples:
+                    if s[0] != s_curr:
+                        s_curr_end = pos
 
-            s_curr = power_samples[0,0]
-            s_curr_start = 0
-            s_curr_end = 0
-            pos = 0
-            for s in power_samples:
-                if s[0] != s_curr:
-                    s_curr_end = pos
+                        if  s_curr_end-s_curr_start >= sample_min:
+                            guess, confidence = guess_bit_with_samples(power_samples[s_curr_start:s_curr_end,:],mid,sigma,power_resolution,start_power,end_power,a_base,b_base,s_curr,Y)
+                            if confidence > confidence_thresh:
+                                partial_solution[int(s_curr)] = guess
+                                confidence_ratings[int(s_curr)] = confidence
+                    
+                        s_curr_start = pos
+                        s_curr = s[0]
+                    pos = pos+1
 
-                    if  s_curr_end-s_curr_start >= sample_min:
-                        guess, confidence = guess_bit_with_samples(power_samples[s_curr_start:s_curr_end,:],mid,sigma,power_resolution,start_power,end_power,a_base,b_base,s_curr,Y)
-                        if confidence > confidence_thresh:
-                            partial_solution[int(s_curr)] = guess
-                            confidence_ratings[int(s_curr)] = confidence
-                
-                    s_curr_start = pos
-                    s_curr = s[0]
-                pos = pos+1
+                check_solution(partial_solution,Y)
 
-            check_solution(partial_solution,Y)
+                partial_solution = linear_system_resolve(N,Included_matrix,P_A,partial_solution,Y)
+                check_solution(partial_solution,Y)
 
-            partial_solution = linear_system_resolve(N,Included_matrix,P_A,partial_solution,Y)
-            check_solution(partial_solution,Y)
+                remaining_end = (partial_solution == -1).sum()
+                if (remaining_end == remaining_start or remaining_end == 0):
+                    if confidence_thresh < 0.95 or remaining_end == 0:
+                        finished = True
+                    confidence_thresh = confidence_thresh*5/100
+                else:
+                    confidence_thresh = 0.95
 
-            remaining_end = (partial_solution == -1).sum()
-            if (remaining_end == remaining_start or remaining_end == 0):
-                if confidence_thresh < 0.95 or remaining_end == 0:
-                    finished = True
-                confidence_thresh = confidence_thresh*5/100
-            else:
-                confidence_thresh = 0.95
-
-        cor, inc = check_solution(partial_solution,Y)
+            cor, inc = check_solution(partial_solution,Y)
 
         ##if unkowns remain, find by exhaustively matching parity vectors
         #if (inc == 0 and N-cor < 10):
 
 
-        return cor, inc, initial_cor
+        return cor, inc
         """
         linalg2  = True
         if linalg2 == False:
@@ -385,7 +395,7 @@ def run_EC_power_flip(N,QBER,sigma,max_iter):
                 
                 ####ensure that we don't try too large spaces
                 if len(random_choice_pos) <= 8:
-                    diff, min_list = test_random_choices(partial_key,random_choice_pos,Eves_traces)
+                    diff, min_list = test_random_choices(partial_key,random_choice_pos,Eves_trac es)
                 else:
                     for pos in random_choice_pos:
                         partial_solution[pos] = random.choice([0,1])
@@ -397,7 +407,7 @@ def run_EC_power_flip(N,QBER,sigma,max_iter):
     
             
     else:
-        return False, 0, 0
+        return 0, 0
 
 ##this experiment aims to show the percentage of key successfully recovered by the attack for various N and noise
 def exp2():
@@ -440,14 +450,17 @@ def exp2():
 
 
 def exp1():
-    Nrange = [100,200,500]#,500,1000]
+
+    Nrange = [100,200,500,1000]
     QBER_range = np.arange(0.01,0.111,0.01)
     repeats = 5
     max_exhaust = 10
     sigma = 0.5
+    algorithms = ["original", "yanetal", "biconf", "option3", "option4", "option7", "option8"]
+    QBER_type = "bernoulli"
+    cascade_params = [algorithms[0],QBER_type]
 
-
-    plt.figure()
+    
 
     cor_avg = []
     inc_avg = []
@@ -459,56 +472,81 @@ def exp1():
             incQBER = 0
             SR_AVG = 0
             for i in range(repeats):
-                cor, inc, ititial_cor = run_EC_power_flip(N,QBER,sigma,3)
+                cor, inc = run_EC_power_flip(N,QBER,sigma,2,cascade_params,initial_only=False)
                 corQBER = corQBER + cor
                 incQBER = incQBER + inc
             corN.append((corQBER/repeats)/N)
             incN.append((incQBER/repeats)/N)
         cor_avg.append(corN)
         inc_avg.append(incN)       
-            
     
 
-    plt.plot(QBER_range,cor_avg[0],label="Corr N={0}".format(Nrange[0]))
-    plt.plot(QBER_range,cor_avg[1],label="Corr N={0}".format(Nrange[1]))
-    plt.plot(QBER_range,cor_avg[2],label="Corr N={0}".format(Nrange[2]))
+    with open("results/exp1.csv","w") as csvfile:
+        writer = csv.writer(csvfile,delimiter=",")
+        writer.writerow(QBER_range)
+        for i in range(len(cor_avg)):
+            writer.writerow([Nrange[i]] + cascade_params + [sigma,"Correct"] + cor_avg[i])
+            writer.writerow([Nrange[i]] + cascade_params + [sigma,"Incorrect"] + inc_avg[i])
 
-    plt.plot(QBER_range,inc_avg[0],label="Corr N={0}".format(Nrange[0]))
-    plt.plot(QBER_range,inc_avg[1],label="Corr N={0}".format(Nrange[1]))
-    plt.plot(QBER_range,inc_avg[2],label="Corr N={0}".format(Nrange[2]))
-    #plt.plot(noise_range,sr[3],label="N={0}".format(Nrange[3]))
+def plot_exp1():
+    plt.style.use("seaborn-v0_8-darkgrid")
+    with open("results/exp1.csv","r") as csvfile:
+        reader = csv.reader(csvfile,delimiter=",")
+        read_count = 0
+        for row in reader:
+            if read_count == 0:
+                QBER_range = np.asarray(row,dtype="float")
+                read_count = read_count + 1
+            else:
+                N = row[0]
+                alg =row[1]
+                err_type = row[2]
+                sigma = row[3]
+                results_type = row[4]
+                results = np.asarray(row[5:],dtype="float")
+                if results_type == "Correct":
+                    plt.plot(QBER_range,results,label="{0}: N={1}, $\sigma$={2}".format(results_type,N,sigma))
 
 
     plt.xlabel("QBER")
     plt.ylabel("Full recovery rate")
 
     plt.legend()
-    plt.title("Effect of noise on attack on general hardware")#with \n STM32-F405RGT6 (ARM Cortex-M4)")
-    plt.savefig("results/exp1_large_general.png",bbox_inches = "tight")
+    plt.title("Effect of noise on with \n STM32-F405RGT6 (ARM Cortex-M4)")#attack on general hardware")
+    plt.show()
+    k=7
+   # plt.savefig("results/exp1_large_general.png",bbox_inches = "tight")
 
 
 
 def initial_discovery_exp():
-    N_range = [100]#,200 ,500]
-    sigma = 0.2
-    repeats = 5
-    for N in N_range:
-        revealed = []
-        QBER_range = np.arange(0.05,0.111,0.01)
-        for QBER in QBER_range:
-            revealed_qber = 0
-            for r in range(repeats):
-                cor, inc, initial_cor = run_EC_power_flip(N,QBER,sigma,2)
-                revealed_qber = revealed_qber + (initial_cor/N)
-            revealed.append(revealed_qber/repeats)
-        plt.plot(QBER_range,revealed,label="{0}".format(N))
+    plt.style.use("seaborn-v0_8-darkgrid")
+    algorithms = ["original", "yanetal", "biconf", "option3", "option4", "option7", "option8"]
+    QBER_type = "bernoulli"
+    
+    for alg in algorithms:
+        #N_range = [100,200]#,500]
+        N_range = [250,500]
+        sigma = 0.1
+        repeats = 5 
+        for N in N_range:
+            revealed = []
+            QBER_range = np.arange(0.01,0.111,0.01)
+            for QBER in QBER_range:
+                revealed_qber = 0
+                for r in range(repeats):
+                    cascade_params = [alg,QBER_type]
+                    cor, inc = run_EC_power_flip(N,QBER,sigma,2,cascade_params,initial_only=True)
+                    revealed_qber = revealed_qber + (cor/N)
+                revealed.append(revealed_qber/repeats)
+            plt.plot(QBER_range,revealed,label="{0} N={1}".format(alg,N))
 
     plt.legend()
     plt.xlabel("QBER")
     plt.ylabel("Portion of key revealed")
     plt.title("Portion of key revealed after reducing initial system")
-    plt.savefig("results/initial_key_bits_reveled.png",bbox_inches="tight")
+    plt.savefig("results/initial_key_bits_reveled_bruno.png",bbox_inches="tight")
 
-initial_discovery_exp()
-
+#initial_discovery_exp()
 #exp1()
+plot_exp1()

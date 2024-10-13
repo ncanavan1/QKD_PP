@@ -7,8 +7,8 @@ def simulate_xor_trace_stm32_kim(A, B, noise_std):
     xor_result = A ^ B
     hw = bin(xor_result).count('1')
 
-    alpha = 0.4
-    beta = -4.75
+    alpha = 0.45
+    beta = -6.45
     
     # Base power consumption with Gaussian noise
     base_power = alpha*hw + beta
@@ -19,18 +19,21 @@ def simulate_xor_trace_stm32_kim(A, B, noise_std):
     
     return simulated_power
 
-def simulate_xor_trace_general(A, B, noise_std):
+def simulate_xor_trace_general(A, B, power_params):
     # Calculate Hamming Weight of the XOR result
     xor_result = A ^ B
     hw = bin(xor_result).count('1')
+    sigma, a_base, b_base = power_params
 
-    alpha = 1
-    beta = 0
     
     # Base power consumption with Gaussian noise
-    base_power = alpha*hw + beta
+    if hw == 0:
+        base_power = a_base
+    else:
+        base_power = b_base
+
     #noise = np.abs(np.random.normal(0, noise_std))
-    noise = np.random.normal(0,noise_std)
+    noise = np.random.normal(0,sigma)
     # Simulated power trace value
     simulated_power = base_power + noise
     
@@ -103,7 +106,12 @@ def probs_given_y(x,y,cdf_a,cdf_b,power_resolution): #p(power=y)
     ##setting power resolution to integral limits
 
     y_below = round(y,power_resolution)
-    y_below_pos = np.where(x == y_below)[0][0]
+    try:
+        y_below_pos = np.where(x == y_below)[0][0]
+    
+    except:
+        k=7
+
     y_above = y_below+10**(-power_resolution)
     y_above_pos = y_below_pos + 1
 
@@ -133,19 +141,19 @@ def probs_given_y(x,y,cdf_a,cdf_b,power_resolution): #p(power=y)
     y_cord_b.append(cdf_b[y_pos])
 
 
-    plt.axvline(x_cord[0],color="k",linestyle="--",ymax=y_cord_a[0])
-    plt.axvline(x_cord[1],color="k",linestyle="--",ymax=y_cord_a[1])
-    plt.axhline(y_cord_a[0],color="k",linestyle="--",xmax=3/7)
-    plt.axhline(y_cord_a[1],color="k",linestyle="--",xmax=3.3/7)
-    plt.axhline(y_cord_b[0],color="k",linestyle="--",xmax=3/7)
-    plt.axhline(y_cord_b[1],color="k",linestyle="--",xmax=3.3/7)
+    plt.axvline(x_cord[0],color="k",linestyle="dotted",ymax=y_cord_a[0])
+    plt.axvline(x_cord[1],color="k",linestyle="dotted",ymax=y_cord_a[1])
+    plt.axhline(y_cord_a[0],color="k",linestyle="dotted",xmax=2/5)
+    plt.axhline(y_cord_a[1],color="k",linestyle="dotted",xmax=2.3/5)
+    plt.axhline(y_cord_b[0],color="k",linestyle="dotted",xmax=2/5)
+    plt.axhline(y_cord_b[1],color="k",linestyle="dotted",xmax=2.3/5)
 
     plt.text(0.19,-0.1,r'$\Delta_{pwr}$')
     plt.legend()
-    plt.savefig("results/cdf.png")
+    plt.savefig("results/cdf.png",dpi=500)
     plt.show()
+    
     """
-
     return p_u, p_a, p_b
 
 def plot_prob_x_range(x,cdf_a,cdf_b,power_resolution):
@@ -208,11 +216,13 @@ def prob_given_S(S,x,cdf_a,cdf_b,power_resolution):
 def runner():
 
     ##set y to at least one magnitude higher resolution than power resolution
-    start_power = -3
-    end_power = 4
+    start_power = -2
+    end_power = 3
     power_resolution = 3
-    a_base = 0
-    b_base = 1
+    #a_base = 0
+    #b_base = 1
+    a_base = -6.9
+    b_base = -6.45
 
     sigma = 0.5
 

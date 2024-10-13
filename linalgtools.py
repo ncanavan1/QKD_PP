@@ -205,7 +205,73 @@ def find_solution(matrix,b):
 	else:
 		print("Invalid Matrix Form")
 	
+##Obtains a solution space for a linear system representation of the list of parity checks
+def linear_system_solver(N,Included_matrix,P_A,partial_key,unconf_pos,Y):
 
+    debugging = True
+     # Solve for x using linear algebra techniques
+    #################
+
+    Included_matrix_new = Included_matrix.copy()
+    P_A_new = P_A.copy()
+    dels = 0
+
+    ###build a new matrix that includes only the variables (bits) still unconfident
+    for i in range(N):
+        if not unconf_pos.__contains__(i):
+            conf_x_vec = partial_key[i]*Included_matrix[:,i]
+            delpos = i - dels
+            Included_matrix_new = np.delete(Included_matrix_new,delpos,1)
+            P_A_new = (P_A_new - conf_x_vec) % 2
+            dels = dels + 1
+
+    ###remove any all zero rows (occours when all bits are confident in the row)
+    temp = Included_matrix_new.copy()
+    temp_PA = P_A_new.copy()
+    dels = 0
+    for i in range(Included_matrix_new.shape[0]):
+        if (Included_matrix_new[i,:] == np.zeros(len(unconf_pos))).all():
+            temp = np.delete(temp,i-dels,0)
+            temp_PA = np.delete(temp_PA,i-dels,0)
+            dels = dels + 1
+    Included_matrix_new = temp
+    P_A_new = temp_PA
+
+    ##convert linear system to reduced row echelon form
+    print("Converting to RREF...")
+    row_ech,b,row_order = row_echelon_form(Included_matrix_new,P_A_new)
+
+  
+    ##Get solution space for linear system
+    print("Solving solution of size {0}x{1}...".format(row_ech.shape[0],row_ech.shape[1]))
+    num_free_var = row_ech.shape[1] - row_ech.shape[0]
+    if num_free_var <= 12:
+        calc_soln = find_solution(row_ech,b)
+    
+        if debugging == True:
+            ##Alices actual solution (used only to verify our algoithm works, not available in real scenario)
+            correct_soln = []
+            unconf_pos.sort()
+            for i in unconf_pos:
+                correct_soln.append(int(Y[i]))
+
+            found = False
+            if calc_soln is not None:
+                for soln in calc_soln:
+                    solnl = soln.tolist()
+                    if (solnl == correct_soln):
+                        print("Correct solution contained in solution space of length: {0}".format(calc_soln.shape[0]))
+                        found = True
+                        break
+                if found == False:
+                    print("No correct solution contained in solution space of length: {0}".format(calc_soln.shape[0]))
+
+    else:
+        calc_soln = []
+        found = False
+        print("Solution space too large with {0} free variables".format(num_free_var))
+
+    return calc_soln, found
 
 
 #matrix = np.array([[1,1,0,1,0,0],[1,0,1,0,1,0],[0,1,1,0,0,1]]) 

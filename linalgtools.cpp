@@ -293,6 +293,7 @@ class mod2system_solver{
             vector<vector<int> > combinations;
             int total_combs = pow(2,k);
 
+            #pragma omp parallel for
             for(int i = 0; i < total_combs; i++){
                 vector<int> comb;
                 for(int j = k-1; j >= 0; j --){
@@ -330,10 +331,28 @@ class mod2system_solver{
                     }
                 }
             }
-
             
+            Matrix<short,free_vars.size(),m> solutions;
             vector<vector<int>> bins;
             bins = binary_combinations(free_vars.size());
+            //for each combination
+            for(int i = 0; i < pow(2,free_vars.size()), i++){
+                //set combination parameters
+                for(int j = 0; j < free_vars.size(); j ++){
+                    solutions[i][free_vars[j]] = bins[i][j];
+                }
+                
+                //solve basic variables
+                for(int j = 0; j < basic_vars.size(); j++){
+                    int solved_value = 0;
+                    for(int k=1; k < pos_arr[basic_vars[j]].size() ; k++){
+                        if()
+                    }
+                }
+            }
+
+
+
         }
         
 };

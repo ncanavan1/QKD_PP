@@ -1,0 +1,19 @@
+{
+	"experiement":"exp2",
+	"repeats":3,
+	"N":[100],
+	"delta_p_start":1,
+	"delta_p_end":1.1,
+	"delta_p_resolution":1,
+	"QBER_start":0,
+	"QBER_end":0.2,
+	"QBER_resolution":0.01,
+	"sigma_start":0.1,
+	"sigma_end":1,
+	"sigma_resolution":0.1,
+	"min_confidence":0.95,
+	"samples_min":2,
+	"algorithms":["original"],
+	"QBER_type":["bernoulli"],
+	"output_file": "results/output_test.csv"
+}
